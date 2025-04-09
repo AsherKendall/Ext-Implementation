@@ -86,9 +86,11 @@ class Disk:
         self.superBlock = d.readBlock(0)
 
         bitmap_block = d.readBlock(1)
+        print(bitmap_block)
         bitmaps = ''.join(format(byte, '08b') for byte in bitmap_block) # Turns into binary
         self.inode_bitmap = bitmaps[:len(bitmaps) // 2]
         self.block_bitmap = bitmaps[len(bitmaps) // 2:]
+        print(bitmaps)
         
         inodes_blocks = ([d.readBlock(i) for i in range(2,66)])  #2-65
         
@@ -107,6 +109,51 @@ class Disk:
         self.cBlock = d.readBlock(self.cDirNum + 66)
 
 
+    
+        
+    def write_inode_bitmap(self, loc):
+        string_list = list(self.inode_bitmap)
+        if self.inode_bitmap[loc] == '1':
+            string_list[loc] = '0'
+        else:
+            string_list[loc] = '1'
+        self.inode_bitmap = "".join(string_list)
+        # Convert to Bytes
+        blockBitmap = bytes.fromhex(format(int(self.block_bitmap, 2), '02x'))
+        inodeBitmap = bytes.fromhex(format(int(self.inode_bitmap, 2), '02x'))
+        newBitmap = inodeBitmap + blockBitmap
+        d.writeBlock(1, newBitmap)
+        
+        # Refresh Bitmap
+        bitmap_block = d.readBlock(1)
+        bitmaps = ''.join(format(byte, '08b') for byte in bitmap_block) # Turns into binary
+        
+        self.inode_bitmap = bitmaps[:len(bitmaps) // 2]
+        
+    def write_data_bitmap(self, loc):
+        string_list = list(self.block_bitmap)
+        if self.block_bitmap[loc] == '1':
+            string_list[loc] = '0'
+        else:
+            string_list[loc] = '1'
+        self.block_bitmap = "".join(string_list)
+        print(self.block_bitmap)
+        # Convert to Bytes
+        blockBitmap = bytes.fromhex(format(int(self.block_bitmap, 2), '02x'))
+        inodeBitmap = bytes.fromhex(format(int(self.inode_bitmap, 2), '02x'))
+        newBitmap =  inodeBitmap + blockBitmap
+        
+        d.writeBlock(1, newBitmap)
+        
+        
+        # Refresh Bitmap
+        bitmap_block = d.readBlock(1)
+        bitmaps = ''.join(format(byte, '08b') for byte in bitmap_block) # Turns into binary
+        print(bitmaps)
+        self.block_bitmap = bitmaps[len(bitmaps) // 2:]
+        print(self.block_bitmap)
+        
+        
     def add_inode(self, inodeLoc, newInode):
         inodeBlockLoc = (inodeLoc // 32) + 2
         temp = d.readBlock(inodeBlockLoc)
@@ -120,44 +167,63 @@ class Disk:
         # Write modified inode block to disk
         d.writeBlock(inodeBlockLoc, inodeBlock)
         
-    def write_inode_block(self, loc):
-        string_list = list(self.inode_bitmap)
-        if self.inode_bitmap[loc] == '1':
-            string_list[loc] = '0'
-        else:
-            string_list[loc] = '1'
-        self.inode_bitmap = "".join(string_list)
-        # Convert to Bytes
-        blockBitmap = int(self.block_bitmap, 2).to_bytes(len(self.block_bitmap) // 8, byteorder='big')
-        inodeBitmap = int(self.inode_bitmap, 2).to_bytes(len(self.inode_bitmap) // 8, byteorder='big')
-        newBitmap = blockBitmap + inodeBitmap
-        d.writeBlock(1, newBitmap)
-        
-        # Refresh Bitmap
-        bitmap_block = d.readBlock(1)
-        bitmaps = ''.join(format(byte, '08b') for byte in bitmap_block) # Turns into binary
-        
-        self.inode_bitmap = bitmaps[:len(bitmaps) // 2]
-        
-    def write_data_block(self, loc):
-        string_list = list(self.block_bitmap)
-        if self.block_bitmap[loc] == '1':
-            string_list[loc] = '0'
-        else:
-            string_list[loc] = '1'
-        self.block_bitmap = "".join(string_list)
-        # Convert to Bytes
-        blockBitmap = int(self.block_bitmap, 2).to_bytes(len(self.block_bitmap) // 8, byteorder='big')
-        inodeBitmap = int(self.inode_bitmap, 2).to_bytes(len(self.inode_bitmap) // 8, byteorder='big')
-        newBitmap = blockBitmap + inodeBitmap
-        d.writeBlock(1, newBitmap)
-        
-        # Refresh Bitmap
-        bitmap_block = d.readBlock(1)
-        bitmaps = ''.join(format(byte, '08b') for byte in bitmap_block) # Turns into binary
-        self.block_bitmap = bitmaps[len(bitmaps) // 2:]
+        # Write modified inode
+        self.write_inode_bitmap(inodeLoc)
         
         
+    def write_file_data_block(self, data):
+        
+        dataBlocks = splitToList(data.encode('utf-8'),512)
+        # Make sure last data block is 512 bytes
+        dataBlocks[-1].ljust(512, b'\x00')
+        
+        dataSize = len(data)
+        
+        
+        availableBlocks = [i for i, letter in enumerate(self.block_bitmap) if letter == '0']
+        # List of data block locations to be used
+        usedDataBlock = []
+        for i in range(len(dataBlocks)):
+            newBlock = availableBlocks[i]
+            usedDataBlock.append(newBlock)
+            # Write to data block
+            d.writeBlock(newBlock + 66, dataBlocks[i])
+            self.write_data_bitmap(newBlock)
+        
+        
+        inodeBytes = b'\x22\x22' + b'\x01\x00' + dataSize.to_bytes(4, byteorder="little")
+        madeIndirect = False
+        indirBlock = b''
+        for i in range(len(usedDataBlock)):
+            if i < 2:
+                # Add to direct block in inode
+                print('hit')
+                inodeBytes = inodeBytes + usedDataBlock[i].to_bytes(2, byteorder='little')
+            else:
+                # Add to indirect data block file.
+                madeIndirect = True
+                indirBlock = indirBlock + usedDataBlock[i].to_bytes(2, byteorder='little')
+                print()
+        
+        
+        indirBlock.ljust(512, b'\x00')
+        
+        # Get inode 
+        inodeLoc = int(self.inode_bitmap.index('0'))
+        idataLoc = int(self.inode_bitmap.index('0'))
+        
+        if madeIndirect:
+            # Write indirect dataBlock
+            d.writeBlock(idataLoc + 66, indirBlock)
+            inodeBytes = inodeBytes + idataLoc.to_bytes(2, byteorder='little')
+            # Change block bitmap
+            self.write_data_bitmap(idataLoc)
+        
+        
+        inodeBytes.ljust(16, b'\x00')
+        # Write newInode to block
+        self.add_inode(inodeLoc, inodeBytes)
+        return inodeLoc
 
     def add_entry(self, inodeLoc, name):
         dBlock = [self.cBlock[i:i+32] for i in range(0, len(self.cBlock), 32)]
@@ -248,16 +314,9 @@ class Disk:
     # NOT FINISHED
     def cmd_write(self, name, data):
         # Find first unused inode
-        inodeLoc = int(self.inode_bitmap.index('0'))
-        print("write")
-        dataBlocks = splitToList(data.encode('utf-8'),512)
-        # Make sure last data block is 512 bytes
-        dataBlocks[-1].ljust(512, b'\x00')
-        for i in range(len(dataBlocks)):
-            blockLoc = int(self.block_bitmap.index('0'))
-            # Write to Block
-            
-            # Change bitmap
+        inodeLoc = self.write_file_data_block(data)
+        # Add record to current directory
+        self.add_entry(inodeLoc, name)
 
     # touch Command
     def cmd_touch(self, name):
@@ -268,7 +327,7 @@ class Disk:
         # Zero out block
         d.writeBlock(blockLoc + 66, (b'\x00' * BLOCK_SIZE))
         # New Inode Bytes
-        newInode = b'\x22\x22' + b'\x10\x00' + (b'\00'* 4) + blockLoc.to_bytes(2, byteorder='little') + (b'\x00' * 3)
+        newInode = b'\x22\x22' + b'\x01\x00' + (b'\00'* 4) + blockLoc.to_bytes(2, byteorder='little') + (b'\x00' * 3)
         # Write newInode to block
         self.add_inode(inodeLoc, newInode)
         
@@ -276,8 +335,7 @@ class Disk:
         self.add_entry(inodeLoc, name)
         
         # Change bitmap
-        self.write_data_block(blockLoc)
-        self.write_inode_block(inodeLoc)
+        self.write_data_bitmap(blockLoc)
 
     # mkdir Command
     def cmd_mkdir(self, name):
@@ -302,18 +360,22 @@ while(True):
     inp = input(f"D:\\{'\\'.join(disk.cDir)}>")
     print()
     
+    split = inp.split()
+    
     if inp == "dir":
         disk.cmd_dir()
     elif inp == "pwd":
         disk.cmd_pwd()
     elif inp == "help":
         disk.cmd_help()
-    elif inp.split()[0] == "cd" and len(inp.split()) == 2:
-        disk.cmd_cd(inp.split()[1])
-    elif inp.split()[0] == "read" and len(inp.split()) == 2:
-        disk.cmd_read(inp.split()[1])
-    elif inp.split()[0] == "stat" and len(inp.split()) == 2:
-        disk.cmd_stat(inp.split()[1])
-    elif inp.split()[0] == "touch" and len(inp.split()) == 2:
-        disk.cmd_touch(inp.split()[1])
+    elif split[0] == "cd" and len(split) == 2:
+        disk.cmd_cd(split[1])
+    elif split[0] == "read" and len(split) == 2:
+        disk.cmd_read(split[1])
+    elif split[0] == "stat" and len(split) == 2:
+        disk.cmd_stat(split[1])
+    elif split[0] == "touch" and len(split) == 2:
+        disk.cmd_touch(split[1])
+    elif split[0] == "write" and len(split) > 2:
+        disk.cmd_write(split[1], ''.join(split[2:]))
 
