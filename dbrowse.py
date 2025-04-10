@@ -303,9 +303,12 @@ class Disk:
         print("pwd          |  Print the current working directory.")
         print("help         |  Lists the commands available, how to use them and what they do.") 
         print("stat         |  Print the inode information for this file.") 
+        print("write        |  Create a file with given name and data.") 
+        print("touch        |  Create a file with given name.") 
         
     # write Command
-    # NOT FINISHED
+    # TODO: Add write if file already exists % check if file
+    # TODO: Add new data structure to indirects
     def cmd_write(self, name, data):
         # Find first unused inode
         inodeLoc = self.write_file_data_block(data)
@@ -332,6 +335,7 @@ class Disk:
         self.write_data_bitmap(blockLoc)
 
     # mkdir Command
+    # TODO: Add support for multi-block directories
     def cmd_mkdir(self, name):
         print("mkdir")
         
@@ -355,6 +359,8 @@ while(True):
     print()
     
     split = inp.split()
+    
+    #TODO: Add support for hierarchical paths
     
     if inp == "dir":
         disk.cmd_dir()
