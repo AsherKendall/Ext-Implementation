@@ -86,12 +86,9 @@ class Disk:
         self.superBlock = d.readBlock(0)
 
         bitmap_block = d.readBlock(1)
-        print(bitmap_block)
         bitmaps = ''.join(format(byte, '08b') for byte in bitmap_block) # Turns into binary
         self.inode_bitmap = bitmaps[:len(bitmaps) // 2]
         self.block_bitmap = bitmaps[len(bitmaps) // 2:]
-        print(bitmaps)
-        
         inodes_blocks = ([d.readBlock(i) for i in range(2,66)])  #2-65
         
         self.inodes = []
@@ -137,7 +134,6 @@ class Disk:
         else:
             string_list[loc] = '1'
         self.block_bitmap = "".join(string_list)
-        print(self.block_bitmap)
         # Convert to Bytes
         blockBitmap = bytes.fromhex(format(int(self.block_bitmap, 2), '02x'))
         inodeBitmap = bytes.fromhex(format(int(self.inode_bitmap, 2), '02x'))
@@ -149,9 +145,7 @@ class Disk:
         # Refresh Bitmap
         bitmap_block = d.readBlock(1)
         bitmaps = ''.join(format(byte, '08b') for byte in bitmap_block) # Turns into binary
-        print(bitmaps)
         self.block_bitmap = bitmaps[len(bitmaps) // 2:]
-        print(self.block_bitmap)
         
         
     def add_inode(self, inodeLoc, newInode):
@@ -181,6 +175,7 @@ class Disk:
         
         
         availableBlocks = [i for i, letter in enumerate(self.block_bitmap) if letter == '0']
+        print(availableBlocks)
         # List of data block locations to be used
         usedDataBlock = []
         for i in range(len(dataBlocks)):
@@ -195,9 +190,8 @@ class Disk:
         madeIndirect = False
         indirBlock = b''
         for i in range(len(usedDataBlock)):
-            if i < 2:
+            if i < 3:
                 # Add to direct block in inode
-                print('hit')
                 inodeBytes = inodeBytes + usedDataBlock[i].to_bytes(2, byteorder='little')
             else:
                 # Add to indirect data block file.
@@ -206,11 +200,11 @@ class Disk:
                 print()
         
         
-        indirBlock.ljust(512, b'\x00')
+        indirBlock = indirBlock.ljust(512, b'\x00')
         
         # Get inode 
         inodeLoc = int(self.inode_bitmap.index('0'))
-        idataLoc = int(self.inode_bitmap.index('0'))
+        idataLoc = int(self.block_bitmap.index('0'))
         
         if madeIndirect:
             # Write indirect dataBlock
