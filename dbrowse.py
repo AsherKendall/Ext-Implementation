@@ -253,11 +253,10 @@ class Disk:
     def cmd_cd(self, name):
         entries = entry_list(d, self.cBlock)
         for item in entries:
-            print(item.name)
             if item.name == name and item.type == 'dir':
-                if name == '..':
+                if name == '..' and len(self.cDir) > 0:
                     self.cDir.pop()
-                elif name != '.':
+                elif name != '.' and name != '..':
                     self.cDir.append(item.name)
                 self.cDirNum = item.inode.directs[0]
                 self.cBlock = d.readBlock(self.cDirNum + 66)
@@ -344,6 +343,7 @@ class Disk:
         print("rmdir")
 
     # delete Command
+    # TODO: Check for multiple links and remove if 0
     def cmd_delete(self):
         print("delete")
 
@@ -368,14 +368,15 @@ while(True):
         disk.cmd_pwd()
     elif inp == "help":
         disk.cmd_help()
-    elif split[0] == "cd" and len(split) == 2:
-        disk.cmd_cd(split[1])
-    elif split[0] == "read" and len(split) == 2:
-        disk.cmd_read(split[1])
-    elif split[0] == "stat" and len(split) == 2:
-        disk.cmd_stat(split[1])
-    elif split[0] == "touch" and len(split) == 2:
-        disk.cmd_touch(split[1])
-    elif split[0] == "write" and len(split) > 2:
-        disk.cmd_write(split[1], ''.join(split[2:]))
+    if split:
+        if split[0] == "cd" and len(split) == 2:
+            disk.cmd_cd(split[1])
+        elif split[0] == "read" and len(split) == 2:
+            disk.cmd_read(split[1])
+        elif split[0] == "stat" and len(split) == 2:
+            disk.cmd_stat(split[1])
+        elif split[0] == "touch" and len(split) == 2:
+            disk.cmd_touch(split[1])
+        elif split[0] == "write" and len(split) > 2:
+            disk.cmd_write(split[1], ''.join(split[2:]))
 
