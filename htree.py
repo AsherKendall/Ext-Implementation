@@ -54,8 +54,11 @@ htree.insert("file1.txt")
 htree.insert("file2.txt")
 htree.insert("file3.txt")
 htree.insert("file4.txt")
+htree.insert("file5.txt")
+htree.insert("file6.txt")
+htree.insert("file7.txt")
 
 print(htree.search("file1.txt"))  # Output: {'filename': 'file1.txt', 'hash': 102}
 print(htree.search("file55.txt"))  # Output: None
 
-print(htree.root.children)
+print(htree.root.entries)

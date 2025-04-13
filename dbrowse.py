@@ -103,6 +103,7 @@ class Disk:
         self.cDirNum = 0
         self.cDir = []
         self.cNum = 0
+        self.cInode = 0
         self.cBlock = d.readBlock(self.cDirNum + 66)
 
 
@@ -219,8 +220,9 @@ class Disk:
         self.add_inode(inodeLoc, inodeBytes)
         return inodeLoc
 
-    def add_entry(self, inodeLoc, name):
-        dBlock = [self.cBlock[i:i+32] for i in range(0, len(self.cBlock), 32)]
+    def add_entry(self, inodeLoc, blockLoc, name):
+        dirBlock = d.readBlock(blockLoc + 66)
+        dBlock = [dirBlock[i:i+32] for i in range(0, len(dirBlock), 32)]
         changed = False
         for i in range(len(dBlock)):
             if dBlock[i][:2] == b'\xFF\xFF':
@@ -230,7 +232,7 @@ class Disk:
                 break
         # Write modified directory to disk
         if changed:
-            d.writeBlock(self.cDirNum + 66, b''.join(dBlock))
+            d.writeBlock(blockLoc + 66, b''.join(dBlock))
             self.cBlock = d.readBlock(self.cDirNum + 66)
         else:
             print("No space in dir for new entries")
@@ -260,6 +262,7 @@ class Disk:
                     self.cDir.append(item.name)
                 self.cDirNum = item.inode.directs[0]
                 self.cBlock = d.readBlock(self.cDirNum + 66)
+                self.cInode = item.location
                 return
         print("Directory not found!")
         print()
@@ -312,7 +315,7 @@ class Disk:
         # Find first unused inode
         inodeLoc = self.write_file_data_block(data)
         # Add record to current directory
-        self.add_entry(inodeLoc, name)
+        self.add_entry(inodeLoc, self.cDirNum, name)
 
     # touch Command
     def cmd_touch(self, name):
@@ -328,7 +331,7 @@ class Disk:
         self.add_inode(inodeLoc, newInode)
         
         # Add record to current directory
-        self.add_entry(inodeLoc, name)
+        self.add_entry(inodeLoc, self.cDirNum, name)
         
         # Change bitmap
         self.write_data_bitmap(blockLoc)
@@ -336,9 +339,35 @@ class Disk:
     # mkdir Command
     # TODO: Add support for multi-block directories
     def cmd_mkdir(self, name):
-        print("mkdir")
+        print('hit')
+        # Check if directory already exists
+        entries = entry_list(d, self.cBlock)
+        for item in entries:
+            if item.name == name:
+                print("File or Directory already exists")
+                return
+            
+        # Get new BLock
+        idataLoc = int(self.block_bitmap.index('0'))
+        d.writeBlock(idataLoc+ 66, (b'\xFF\xFF' + b'\x00' * 30) * 16)
+        self.write_data_bitmap(idataLoc)
+        
+        # Get new inode
+        inodeLoc = int(self.inode_bitmap.index('0'))
+        newInode = b'\x11\x11' + b'\x01\x00' + (b'\00'* 4) + idataLoc.to_bytes(2, byteorder='little') + (b'\x00' * 3)
+        self.add_inode(inodeLoc, newInode)
+        self.write_inode_bitmap(inodeLoc)
+        
+        # Create . dir
+        self.add_entry(inodeLoc, idataLoc, '.')
+        # Create .. dir
+        self.add_entry(self.cInode, idataLoc, '..')
+        
+        self.add_entry(inodeLoc, self.cDirNum, name)
+        
         
     # rmdir Command
+    # TODO: check for multiple links and remove inode if zero
     def cmd_rmdir(self, name):
         print("rmdir")
 
@@ -377,6 +406,10 @@ while(True):
             disk.cmd_stat(split[1])
         elif split[0] == "touch" and len(split) == 2:
             disk.cmd_touch(split[1])
+        elif split[0] == "mkdir" and len(split) == 2:
+            disk.cmd_mkdir(split[1])
         elif split[0] == "write" and len(split) > 2:
             disk.cmd_write(split[1], ''.join(split[2:]))
-
+        
+    else:
+        print("Command not found")
