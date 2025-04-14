@@ -1,6 +1,6 @@
 import Disk
 import math
-from .dfuns import splitToList, entry_list, Inode, Entry
+from .dfuns import splitToList, entry_list, Inode, Entry, read_data_block, write_data_block, get_first_inode, get_first_block
 
 DISK_FILE	= "disk.img"
 BLOCK_SIZE	= 512
@@ -8,15 +8,6 @@ BLOCK_SIZE	= 512
 # Disk FIle
 d = Disk.Disk(DISK_FILE, BLOCK_SIZE)
 
-
-
-def get_Inode(d, loc):
-    
-    inodes_blocks = ([d.readBlock(i) for i in range(2,66)])
-    # Gets the block by location
-    block = inodes_blocks[loc//32]
-    blockLoc = loc % 32
-    return Inode(block[blockLoc*16:(blockLoc*16)+16])
 
 
 def block_list(inode):
@@ -33,15 +24,15 @@ def block_list(inode):
         
         for item in newNode.directs:
             if item != 0:
-                blocks.append(d.readBlock(item + 66))
+                blocks.append(read_data_block(item))
         if newNode.indirects != 0:
-            indirectBlock = d.readBlock(newNode.indirects + 66)
+            indirectBlock = read_data_block(d, newNode.indirects)
             for i in range(0,512,2):
                 loc = int.from_bytes(indirectBlock[i*2:(i*2)+2], byteorder='little' )
                 if loc == 0:
                     break
                 else:
-                    blocks.append(d.readBlock(loc + 66))
+                    blocks.append(read_data_block(d, loc))
             
     return blocks
 
@@ -70,7 +61,7 @@ class Disk:
         self.cDir = []
         self.cNum = 0
         self.cInode = 0
-        self.cBlock = d.readBlock(self.cDirNum + 66)
+        self.cBlock = read_data_block(d, self.cDirNum)
 
 
     
@@ -149,7 +140,7 @@ class Disk:
             newBlock = availableBlocks[i]
             usedDataBlock.append(newBlock)
             # Write to data block
-            d.writeBlock(newBlock + 66, dataBlocks[i])
+            write_data_block(d, newBlock, dataBlocks[i])
             self.write_data_bitmap(newBlock)
         
         
@@ -170,12 +161,12 @@ class Disk:
         indirBlock = indirBlock.ljust(512, b'\x00')
         
         # Get inode 
-        inodeLoc = int(self.inode_bitmap.index('0'))
-        idataLoc = int(self.block_bitmap.index('0'))
+        inodeLoc = get_first_inode(self)
+        idataLoc = get_first_block(self)
         
         if madeIndirect:
             # Write indirect dataBlock
-            d.writeBlock(idataLoc + 66, indirBlock)
+            write_data_block(d, idataLoc, indirBlock)
             inodeBytes = inodeBytes + idataLoc.to_bytes(2, byteorder='little')
             # Change block bitmap
             self.write_data_bitmap(idataLoc)
@@ -187,7 +178,7 @@ class Disk:
         return inodeLoc
 
     def add_entry(self, inodeLoc, blockLoc, name):
-        dirBlock = d.readBlock(blockLoc + 66)
+        dirBlock = read_data_block(d, blockLoc)
         dBlock = [dirBlock[i:i+32] for i in range(0, len(dirBlock), 32)]
         changed = False
         for i in range(len(dBlock)):
@@ -198,8 +189,8 @@ class Disk:
                 break
         # Write modified directory to disk
         if changed:
-            d.writeBlock(blockLoc + 66, b''.join(dBlock))
-            self.cBlock = d.readBlock(self.cDirNum + 66)
+            write_data_block(d, blockLoc, b''.join(dBlock))
+            self.cBlock = read_data_block(d, self.cDirNum)
         else:
             print("No space in dir for new entries")
     
@@ -227,7 +218,7 @@ class Disk:
                 elif name != '.' and name != '..':
                     self.cDir.append(item.name)
                 self.cDirNum = item.inode.directs[0]
-                self.cBlock = d.readBlock(self.cDirNum + 66)
+                self.cBlock = read_data_block(d, self.cDirNum)
                 self.cInode = item.location
                 return
         print("Directory not found!")
@@ -284,13 +275,14 @@ class Disk:
         self.add_entry(inodeLoc, self.cDirNum, name)
 
     # touch Command
+    # TODO: Add support for multi-block directories
     def cmd_touch(self, name):
         # Find first unused block
-        blockLoc = int(self.block_bitmap.index('0'))
+        blockLoc = get_first_block(self)
         # Find first unused inode
-        inodeLoc = int(self.inode_bitmap.index('0'))
+        inodeLoc = get_first_inode(self)
         # Zero out block
-        d.writeBlock(blockLoc + 66, (b'\x00' * BLOCK_SIZE))
+        write_data_block(d, blockLoc, (b'\x00' * BLOCK_SIZE))
         # New Inode Bytes
         newInode = b'\x22\x22' + b'\x01\x00' + (b'\00'* 4) + blockLoc.to_bytes(2, byteorder='little') + (b'\x00' * 3)
         # Write newInode to block
@@ -305,7 +297,6 @@ class Disk:
     # mkdir Command
     # TODO: Add support for multi-block directories
     def cmd_mkdir(self, name):
-        print('hit')
         # Check if directory already exists
         entries = entry_list(d, self.cBlock)
         for item in entries:
@@ -314,12 +305,12 @@ class Disk:
                 return
             
         # Get new BLock
-        idataLoc = int(self.block_bitmap.index('0'))
-        d.writeBlock(idataLoc+ 66, (b'\xFF\xFF' + b'\x00' * 30) * 16)
+        idataLoc = get_first_block(self)
+        write_data_block(d, idataLoc, (b'\xFF\xFF' + b'\x00' * 30) * 16)
         self.write_data_bitmap(idataLoc)
         
         # Get new inode
-        inodeLoc = int(self.inode_bitmap.index('0'))
+        inodeLoc = get_first_inode(self)
         newInode = b'\x11\x11' + b'\x01\x00' + (b'\00'* 4) + idataLoc.to_bytes(2, byteorder='little') + (b'\x00' * 3)
         self.add_inode(inodeLoc, newInode)
         self.write_inode_bitmap(inodeLoc)
@@ -335,6 +326,18 @@ class Disk:
     # rmdir Command
     # TODO: check for multiple links and remove inode if zero
     def cmd_rmdir(self, name):
+        # Check if directory already exists
+        entries = entry_list(d, self.cBlock)
+        for item in entries:
+            if item.name == name:
+                print(f"{name} does not exists")
+                return
+            elif item.name == name and item.type == 'file':
+                print(f"{name} is not a directory")
+                return
+        # Remove from directory
+        
+        # Check if multiple links else remove from bitmap and clear inode & data block
         print("rmdir")
 
     # delete Command
