@@ -8,10 +8,6 @@ BLOCK_SIZE	= 512
 d = Disk.Disk(DISK_FILE, BLOCK_SIZE)
 
 
-
-
-
-
 class Disk:
     
     def __init__(self, d):
@@ -190,16 +186,16 @@ class Disk:
     # cd Command
     def cmd_cd(self, name):
         entries = entry_list(d, self.cBlock)
-        for item in entries.entries:
-            if item.name == name and item.type == 'dir':
-                if name == '..' and len(self.cDir) > 0:
-                    self.cDir.pop()
-                elif name != '.' and name != '..':
-                    self.cDir.append(item.name)
-                self.cDirNum = item.inode.directs[0]
-                self.cBlock = read_data_block(d, self.cDirNum)
-                self.cInode = item.location
-                return
+        item = entries.findEntry(name,'dir')
+        if item:
+            if name == '..' and len(self.cDir) > 0:
+                self.cDir.pop()
+            elif name != '.' and name != '..':
+                self.cDir.append(item.name)
+            self.cDirNum = item.inode.directs[0]
+            self.cBlock = read_data_block(d, self.cDirNum)
+            self.cInode = item.location
+            return
         print("Directory not found!")
         print()
 
