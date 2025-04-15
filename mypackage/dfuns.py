@@ -23,6 +23,22 @@ class Entry:
         self.type = entryInode.type
 
 
+class Entries:
+    def __init__(self, entries):
+        self.entries = entries
+    
+    
+    def findEntry(self, name, fileType="both"):
+        if fileType == "both":
+            for item in self.entries:
+                if item.name == name:
+                    return item
+        else:
+            for item in self.entries:
+                if item.name == name and item.type == fileType:
+                    return item
+        return False
+
 class Inode:
     
     def __init__(self, inode):
@@ -45,7 +61,7 @@ def entry_list(d, block):
     for item in [block[i:i+32] for i in range(0, len(block), 32)]:
         if item[:2] != b'\xFF\xFF':
             inodes.append(Entry(d, item))
-    return inodes
+    return Entries(inodes)
 
 
 def write_data_block(d, loc, data):
@@ -59,3 +75,31 @@ def get_first_inode(disk):
 
 def get_first_block(disk):
     return int(disk.block_bitmap.index('0'))
+
+
+
+def block_list(d, inode):
+    blocks = []
+    inodes = [inode]
+    # Add all directs to list
+    print()
+    while True:
+        
+        if len(inodes) <= 0:
+            break
+        # Takes first Inode off the list
+        newNode = inodes.pop(0)
+        
+        for item in newNode.directs:
+            if item != 0:
+                blocks.append(read_data_block(d,item))
+        if newNode.indirects != 0:
+            indirectBlock = read_data_block(d, newNode.indirects)
+            for i in range(0,512,2):
+                loc = int.from_bytes(indirectBlock[i*2:(i*2)+2], byteorder='little' )
+                if loc == 0:
+                    break
+                else:
+                    blocks.append(read_data_block(d, loc))
+            
+    return blocks

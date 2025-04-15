@@ -1,7 +1,6 @@
 import Disk
 import math
-from .dfuns import splitToList, entry_list, Inode, Entry, read_data_block, write_data_block, get_first_inode, get_first_block
-
+from mypackage.dfuns  import splitToList, entry_list, Inode, Entry, read_data_block, write_data_block, get_first_inode, get_first_block, Entries, block_list
 DISK_FILE	= "disk.img"
 BLOCK_SIZE	= 512
 
@@ -10,31 +9,7 @@ d = Disk.Disk(DISK_FILE, BLOCK_SIZE)
 
 
 
-def block_list(inode):
-    blocks = []
-    inodes = [inode]
-    # Add all directs to list
-    print()
-    while True:
-        
-        if len(inodes) <= 0:
-            break
-        # Takes first Inode off the list
-        newNode = inodes.pop(0)
-        
-        for item in newNode.directs:
-            if item != 0:
-                blocks.append(read_data_block(item))
-        if newNode.indirects != 0:
-            indirectBlock = read_data_block(d, newNode.indirects)
-            for i in range(0,512,2):
-                loc = int.from_bytes(indirectBlock[i*2:(i*2)+2], byteorder='little' )
-                if loc == 0:
-                    break
-                else:
-                    blocks.append(read_data_block(d, loc))
-            
-    return blocks
+
 
 
 class Disk:
@@ -63,7 +38,11 @@ class Disk:
         self.cInode = 0
         self.cBlock = read_data_block(d, self.cDirNum)
 
-
+    def get_directory_from_path(self, path):
+        print("stub")
+        
+    def get_file_from_path(self, path):
+        print("stub")
     
         
     def write_inode_bitmap(self, loc):
@@ -199,7 +178,7 @@ class Disk:
     # dir Command
     def cmd_dir(self):
         entries = entry_list(d, self.cBlock)
-        for item in entries:
+        for item in entries.entries:
             # Directory
             if item.type == 'dir':
                 print(f' Directory  Size:{item.size:<5}  {item.name}')
@@ -211,7 +190,7 @@ class Disk:
     # cd Command
     def cmd_cd(self, name):
         entries = entry_list(d, self.cBlock)
-        for item in entries:
+        for item in entries.entries:
             if item.name == name and item.type == 'dir':
                 if name == '..' and len(self.cDir) > 0:
                     self.cDir.pop()
@@ -227,14 +206,16 @@ class Disk:
     # read Command
     def cmd_read(self, name):
         entries = entry_list(d, self.cBlock)
-        for item in entries:
-            if item.name == name and item.type == 'file':
-                if not self.inode_bitmap[item.location]:
-                    return "Inode was not in bitmap"
-                blocks = block_list(item.inode)
-                output = [i.decode("utf-8").rstrip('\x00') for i in blocks]
-                print(''.join(output) )
-                return
+        item = entries.findEntry(name, 'file')
+        if item:
+            if not self.inode_bitmap[item.location]:
+                return "Inode was not in bitmap"
+            blocks = block_list(d, item.inode)
+            output = [i.decode("utf-8").rstrip('\x00') for i in blocks]
+            print(''.join(output) )
+            return
+
+                
         print("Sorry file by that name could not be found")
 
     # pwd Command
@@ -244,16 +225,18 @@ class Disk:
     # stat Command
     def cmd_stat(self, name):
         entries = entry_list(d, self.cBlock)
-        for item in entries:
-            if item.name == name:
-                print("{:<12}".format(f"Name: "), item.name)
-                print("{:<12}".format(f"Inode: "), item.location)
-                print("{:<12}".format(f"Type: "), item.inode.type)
-                print("{:<12}".format(f"Links: "), item.inode.link)
-                print("{:<12}".format(f"Size: "), item.size)
-                print("{:<12}".format(f"Directs: "), item.inode.directs)
-                print("{:<12}".format(f"Indirects: "), item.inode.indirects)
-                return
+        item = entries.findEntry(name)
+        if item:
+            print("{:<12}".format(f"Name: "), item.name)
+            print("{:<12}".format(f"Inode: "), item.location)
+            print("{:<12}".format(f"Type: "), item.inode.type)
+            print("{:<12}".format(f"Links: "), item.inode.link)
+            print("{:<12}".format(f"Size: "), item.size)
+            print("{:<12}".format(f"Directs: "), item.inode.directs)
+            print("{:<12}".format(f"Indirects: "), item.inode.indirects)
+            return
+        print("File not found")
+        
     # help Command
     def cmd_help(self):
         print("dir          |  List contents of current directory. Print type, size (for files), and name")
@@ -299,11 +282,11 @@ class Disk:
     def cmd_mkdir(self, name):
         # Check if directory already exists
         entries = entry_list(d, self.cBlock)
-        for item in entries:
-            if item.name == name:
-                print("File or Directory already exists")
-                return
-            
+        item = entries.findEntry(name)
+        if item:
+            print("File or Directory already exists")
+            return
+
         # Get new BLock
         idataLoc = get_first_block(self)
         write_data_block(d, idataLoc, (b'\xFF\xFF' + b'\x00' * 30) * 16)
@@ -328,13 +311,9 @@ class Disk:
     def cmd_rmdir(self, name):
         # Check if directory already exists
         entries = entry_list(d, self.cBlock)
-        for item in entries:
-            if item.name == name:
-                print(f"{name} does not exists")
-                return
-            elif item.name == name and item.type == 'file':
-                print(f"{name} is not a directory")
-                return
+        item = entries.findEntry(name, 'file')
+        if item:
+            print(f"Directory {name} does not exist")
         # Remove from directory
         
         # Check if multiple links else remove from bitmap and clear inode & data block
@@ -348,6 +327,10 @@ class Disk:
     # link Command
     def cmd_link(self):
         print("link")
+    
+    
+    def cmd_copy(self, file, newFile):
+        print("copy")
 
 disk = Disk(d)
 
@@ -367,6 +350,8 @@ while(True):
     elif inp == "help":
         disk.cmd_help()
     if split:
+        # Add something here for hierarchical paths
+        
         if split[0] == "cd" and len(split) == 2:
             disk.cmd_cd(split[1])
         elif split[0] == "read" and len(split) == 2:
