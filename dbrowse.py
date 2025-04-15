@@ -29,17 +29,23 @@ class Disk:
                 
                 
         self.cDirNum = 0
-        self.cDir = []
+        self.uDirNum = 0
+        self.uDir = []
         self.cNum = 0
         self.cInode = 0
         self.cBlock = read_data_block(d, self.cDirNum)
+        self.uBlock = read_data_block(d, self.cDirNum)
 
-    def get_directory_from_path(self, path):
-        print("stub")
         
-    def get_file_from_path(self, path):
-        print("stub")
-    
+    def get_path(self, path):
+        for i in range(len(path)-1):
+            entries = entry_list(d, self.cBlock)
+            item = entries.findEntry(path[i])
+            if item and item.type == 'dir':
+                self.cDirNum = item.inode.directs[0]
+                self.cBlock = read_data_block(d, self.cDirNum)
+                self.cInode = item.location
+        return path[-1]
         
     def write_inode_bitmap(self, loc):
         string_list = list(self.inode_bitmap)
@@ -173,7 +179,7 @@ class Disk:
 
     # dir Command
     def cmd_dir(self):
-        entries = entry_list(d, self.cBlock)
+        entries = entry_list(d, self.uBlock)
         for item in entries.entries:
             # Directory
             if item.type == 'dir':
@@ -185,16 +191,18 @@ class Disk:
 
     # cd Command
     def cmd_cd(self, name):
-        entries = entry_list(d, self.cBlock)
+        entries = entry_list(d, self.uBlock)
         item = entries.findEntry(name,'dir')
         if item:
-            if name == '..' and len(self.cDir) > 0:
-                self.cDir.pop()
+            if name == '..' and len(self.uDir) > 0:
+                self.uDir.pop()
             elif name != '.' and name != '..':
-                self.cDir.append(item.name)
+                self.uDir.append(item.name)
             self.cDirNum = item.inode.directs[0]
             self.cBlock = read_data_block(d, self.cDirNum)
             self.cInode = item.location
+            self.uDirNum = item.inode.directs[0]
+            self.uBlock = read_data_block(d, self.uDirNum)
             return
         print("Directory not found!")
         print()
@@ -211,12 +219,12 @@ class Disk:
             print(''.join(output) )
             return
 
-                
+        print(name)
         print("Sorry file by that name could not be found")
 
     # pwd Command
     def cmd_pwd(self):
-        print(f"\\{'\\'.join(self.cDir)}")
+        print(f"\\{'\\'.join(self.uDir)}")
 
     # stat Command
     def cmd_stat(self, name):
@@ -331,35 +339,57 @@ class Disk:
 disk = Disk(d)
 
 while(True):
-    print()
-    inp = input(f"D:\\{'\\'.join(disk.cDir)}>")
-    print()
-    
-    split = inp.split()
-    
-    #TODO: Add support for hierarchical paths
-    
-    if inp == "dir":
-        disk.cmd_dir()
-    elif inp == "pwd":
-        disk.cmd_pwd()
-    elif inp == "help":
-        disk.cmd_help()
-    if split:
-        # Add something here for hierarchical paths
+    try:
+        print()
+        inp = input(f"D:\\{'\\'.join(disk.uDir)}>")
+        print()
         
-        if split[0] == "cd" and len(split) == 2:
-            disk.cmd_cd(split[1])
-        elif split[0] == "read" and len(split) == 2:
-            disk.cmd_read(split[1])
-        elif split[0] == "stat" and len(split) == 2:
-            disk.cmd_stat(split[1])
-        elif split[0] == "touch" and len(split) == 2:
-            disk.cmd_touch(split[1])
-        elif split[0] == "mkdir" and len(split) == 2:
-            disk.cmd_mkdir(split[1])
-        elif split[0] == "write" and len(split) > 2:
-            disk.cmd_write(split[1], ''.join(split[2:]))
+        split = inp.split()
         
-    else:
-        print("Command not found")
+        #TODO: Add support for hierarchical paths
+        
+        
+        if len(split) > 1:
+            # Add something here for hierarchical paths
+            items = split[1].split('\\')
+            secondItem = split[1]
+            lenSplit = len(split)
+            
+            if len(items) > 1:
+                item = disk.get_path(items)
+                if isinstance(item, str):
+                    secondItem = item
+                else:
+                    secondItem = item.name
+            else:
+                disk.cBlock = disk.uBlock
+                disk.cDirNum = disk.uDirNum
+                
+            print(secondItem)
+                
+            if split[0] == "cd" and lenSplit == 2:
+                disk.cmd_cd(secondItem)
+            elif split[0] == "read" and lenSplit == 2:
+                disk.cmd_read(secondItem)
+            elif split[0] == "stat" and lenSplit == 2:
+                disk.cmd_stat(secondItem)
+            elif split[0] == "touch" and lenSplit == 2:
+                disk.cmd_touch(secondItem)
+            elif split[0] == "mkdir" and lenSplit == 2:
+                disk.cmd_mkdir(secondItem)
+            elif split[0] == "write" and lenSplit > 2:
+                disk.cmd_write(secondItem, ''.join(split[2:]))
+            
+        else:
+            if inp == "dir":
+                disk.cmd_dir()
+            elif inp == "pwd":
+                disk.cmd_pwd()
+            elif inp == "help":
+                disk.cmd_help()
+            else:
+                print("Command not found")
+    except KeyboardInterrupt:
+        print()
+        print("Exited Program")
+        exit()
