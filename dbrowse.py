@@ -38,31 +38,70 @@ class Disk:
 
     def update_uDirBlock(self):
         self.uBlock = read_data_block(d, self.uDirNum)
+        self.cDirNum = self.uDirNum
+        self.cBlock = self.uBlock
         
     def get_path(self, path):
-        items = path.split('/')
-        items = self.uDir + items #[[1,2]0,1,2]
-        for i in range(len(self.uDir),len(items)-1):
+        splitPath = path.split('/')
+        lenUDir = len(self.uDir)
+        
+        # Check if going from root
+        if splitPath[0] == '':
+            print(splitPath)
+            splitPath.pop(0)
+            items = splitPath
+            self.cDirNum = 0
+            self.cBlock = read_data_block(d, self.cDirNum)
+            lenUDir = 0
+        else:
+            items = splitPath
+            items = self.uDir + items #[[1,2]0,1,2]
+        
+        print(items)
+        # Remove '' from / at end of argument
+        if items[-1] == '':
+            items.pop()
+        final = items.pop()
+        itemLen = len(items)
+        i = lenUDir
+        while i < itemLen and len(items) > 0:
+            print(i)
+            print(items)
+            print(itemLen)
+            print()
+            #print(self.cDirNum)
             entries = entry_list(d, self.cBlock)
             item = entries.findEntry(items[i])
             if item and item.type == 'dir':
                 if item.name == '.':
+                    items.pop(i)
+                    itemLen -= 1
                     continue
                 elif item.name == '..':
-                    if i == 0:
-                        continue
-                    items.pop(i)
-                    i -= 1
-                    item = entries.findEntry(items[i])
                     
+                    items.pop(i)
+                    if len(items) > 2:
+                        items.pop(i-1)
+                        i -= 1
+                        itemLen -= 1
+                    i -= 1
+                    itemLen -= 1
+                    if i < 1:
+                        i = 0
+                        self.cDirNum = 0
+                        self.cBlock = read_data_block(d, self.cDirNum)
+                        continue
+                    item = entries.findEntry(items[i])
+                
                 self.cDirNum = item.inode.directs[0]
                 self.cBlock = read_data_block(d, self.cDirNum)
                 self.cInode = item.location
             else:
                 print(f'Path not valid: {'/'.join(items)}')
                 return False
+            i += 1
         print(items)
-        return items
+        return items + [final]
         
     def write_inode_bitmap(self, loc):
         string_list = list(self.inode_bitmap)
@@ -246,7 +285,7 @@ class Disk:
             self.uDir = path
             if name == '..' or name == '.':
                 self.uDir.pop()
-            if name == '..':
+            if name == '..' and len(self.uDir) > 1:
                 self.uDir.pop()
             self.cDirNum = item.inode.directs[0]
             self.cBlock = read_data_block(d, self.cDirNum)
@@ -428,7 +467,7 @@ disk = Disk(d)
 while(True):
     try:
         print()
-        inp = input(f"D:{'/'.join(disk.uDir)}>")
+        inp = input(f"D:/{'/'.join(disk.uDir)}>")
         print()
         
         split = inp.split()
