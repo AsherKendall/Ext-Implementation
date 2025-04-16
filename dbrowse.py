@@ -1,6 +1,6 @@
 import Disk
 import math
-from mypackage.dfuns  import splitToList, entry_list, Inode, Entry, read_data_block, write_data_block, get_first_inode, get_first_block, Entries, block_list
+from mypackage.dfuns  import splitToList, entry_list, Inode, Entry, read_data_block, write_data_block, get_first_inode, get_first_block, Entries, block_list, get_Inode, write_inode
 DISK_FILE	= "disk.img"
 BLOCK_SIZE	= 512
 
@@ -36,6 +36,8 @@ class Disk:
         self.cBlock = read_data_block(d, self.cDirNum)
         self.uBlock = read_data_block(d, self.cDirNum)
 
+    def update_uDirBlock(self):
+        self.uBlock = read_data_block(d, self.uDirNum)
         
     def get_path(self, path):
         for i in range(len(path)-1):
@@ -102,7 +104,24 @@ class Disk:
         
         # Write modified inode
         self.write_inode_bitmap(inodeLoc)
+    
+    def remove_inode(self, inodeLoc):
         
+        # Check if has more than 1 link and minus count if true
+        inode = get_Inode(d, inodeLoc)
+        if inode.link > 1:
+            inode.link = inode.link - 1
+            write_inode(d, inodeLoc, inode.to_bytes(), BLOCK_SIZE)
+            return
+        
+        # Zero out entry
+        write_inode(d, inodeLoc, b'\x00' * 16, BLOCK_SIZE)
+        
+        # Write modified inode
+        self.write_inode_bitmap(inodeLoc)
+        
+        # Deallocate data block bitmap
+        # TODO: Add support for extents
         
     def write_file_data_block(self, data):
         
@@ -175,8 +194,21 @@ class Disk:
         else:
             print("No space in dir for new entries")
     
-    
-
+    def remove_entry(self, name):
+        entries = entry_list(d, self.uBlock)
+        item = entries.findEntry(name)
+        if item:
+            if item.type == 'file':
+                # Remove entry
+                dirBlock = read_data_block(d, self.cDirNum)
+                dBlock = [dirBlock[i:i+32] for i in range(0, len(dirBlock), 32)]
+                dBlock[item.location + 1] = b'\xFF\xFF'.ljust(32, b'\x00')
+                self.remove_inode(item.location)
+                write_data_block(d, self.cDirNum, b''.join(dBlock))
+                self.cBlock = read_data_block(d, self.cDirNum)
+            else:
+                #TODO: Add support for removing sub entries
+                print("Remove sub entries")
     # dir Command
     def cmd_dir(self):
         entries = entry_list(d, self.uBlock)
@@ -282,7 +314,6 @@ class Disk:
         self.write_data_bitmap(blockLoc)
 
     # mkdir Command
-    # TODO: Add support for multi-block directories
     def cmd_mkdir(self, name):
         # Check if directory already exists
         entries = entry_list(d, self.cBlock)
@@ -312,10 +343,11 @@ class Disk:
         
     # rmdir Command
     # TODO: check for multiple links and remove inode if zero
+    # TODO: Add support for multi-block directories
     def cmd_rmdir(self, name):
         # Check if directory already exists
         entries = entry_list(d, self.cBlock)
-        item = entries.findEntry(name, 'file')
+        item = entries.findEntry(name, 'dir')
         if item:
             print(f"Directory {name} does not exist")
         # Remove from directory
@@ -325,8 +357,13 @@ class Disk:
 
     # delete Command
     # TODO: Check for multiple links and remove if 0
-    def cmd_delete(self):
-        print("delete")
+    def cmd_delete(self, name):
+        entries = entry_list(d, self.cBlock)
+        item = entries.findEntry(name, 'file')
+        if item:
+            self.remove_entry(name)
+        else:
+            print("Can't find file by that name.")
 
     # link Command
     def cmd_link(self):
@@ -346,11 +383,9 @@ while(True):
         
         split = inp.split()
         
-        #TODO: Add support for hierarchical paths
-        
-        
+        # Hierarchical path code
         if len(split) > 1:
-            # Add something here for hierarchical paths
+            
             items = split[1].split('\\')
             secondItem = split[1]
             lenSplit = len(split)
@@ -365,7 +400,6 @@ while(True):
                 disk.cBlock = disk.uBlock
                 disk.cDirNum = disk.uDirNum
                 
-            print(secondItem)
                 
             if split[0] == "cd" and lenSplit == 2:
                 disk.cmd_cd(secondItem)
@@ -377,6 +411,8 @@ while(True):
                 disk.cmd_touch(secondItem)
             elif split[0] == "mkdir" and lenSplit == 2:
                 disk.cmd_mkdir(secondItem)
+            elif split[0] == "delete" and lenSplit == 2:
+                disk.cmd_delete(secondItem)
             elif split[0] == "write" and lenSplit > 2:
                 disk.cmd_write(secondItem, ''.join(split[2:]))
             
@@ -389,6 +425,7 @@ while(True):
                 disk.cmd_help()
             else:
                 print("Command not found")
+        disk.update_uDirBlock()
     except KeyboardInterrupt:
         print()
         print("Exited Program")

@@ -49,7 +49,27 @@ class Inode:
         self.size = int.from_bytes(inode[4:8], byteorder='little' )
         self.directs = [int.from_bytes(inode[8+(i*2):10+(i*2)] , byteorder='little' )for i in range(3) ]
         self.indirects= int.from_bytes(inode[14:16] , byteorder='little' )
+    def to_bytes(self):
+        byte = b''
+        byte = byte + b'\x11\x11' if self.type == 'dir' else b'\x22\x22'
+        byte = byte + self.link.to_bytes(2, byteorder='little') + self.size.to_bytes(2, byteorder='little') 
+        byte = byte + b''.join([self.directs[i].to_bytes for  i in range(len(self.directs))])
+        byte = byte + self.indirects.to_bytes(2, byteorder='little') 
+        return byte
 
+
+def write_inode(d, loc, inode, BLOCK_SIZE):
+    inodeBlockLoc = (loc // 32) + 2
+    temp = d.readBlock(inodeBlockLoc)
+    inodeBlocks = []
+    for i in range(0, BLOCK_SIZE, 16):
+        inodeBlocks.append(temp[i:i+16])
+    # Set new inode data
+    inodeBlocks[loc % 32] = inode
+    inodeBlock = b''.join(inodeBlocks)
+    
+    # Write modified inode block to disk
+    d.writeBlock(inodeBlockLoc, inodeBlock)
 
 
 
