@@ -40,14 +40,29 @@ class Disk:
         self.uBlock = read_data_block(d, self.uDirNum)
         
     def get_path(self, path):
-        for i in range(len(path)-1):
+        items = path.split('/')
+        items = self.uDir + items #[[1,2]0,1,2]
+        for i in range(len(self.uDir),len(items)-1):
             entries = entry_list(d, self.cBlock)
-            item = entries.findEntry(path[i])
+            item = entries.findEntry(items[i])
             if item and item.type == 'dir':
+                if item.name == '.':
+                    continue
+                elif item.name == '..':
+                    if i == 0:
+                        continue
+                    items.pop(i)
+                    i -= 1
+                    item = entries.findEntry(items[i])
+                    
                 self.cDirNum = item.inode.directs[0]
                 self.cBlock = read_data_block(d, self.cDirNum)
                 self.cInode = item.location
-        return path[-1]
+            else:
+                print(f'Path not valid: {'/'.join(items)}')
+                return False
+        print(items)
+        return items
         
     def write_inode_bitmap(self, loc):
         string_list = list(self.inode_bitmap)
@@ -223,13 +238,16 @@ class Disk:
 
     # cd Command
     def cmd_cd(self, name):
-        entries = entry_list(d, self.uBlock)
+        path = self.get_path(name)
+        name = path[-1]
+        entries = entry_list(d, self.cBlock)
         item = entries.findEntry(name,'dir')
         if item:
-            if name == '..' and len(self.uDir) > 0:
+            self.uDir = path
+            if name == '..' or name == '.':
                 self.uDir.pop()
-            elif name != '.' and name != '..':
-                self.uDir.append(item.name)
+            if name == '..':
+                self.uDir.pop()
             self.cDirNum = item.inode.directs[0]
             self.cBlock = read_data_block(d, self.cDirNum)
             self.cInode = item.location
@@ -241,6 +259,8 @@ class Disk:
 
     # read Command
     def cmd_read(self, name):
+        path = self.get_path(name)
+        name = path[-1]
         entries = entry_list(d, self.cBlock)
         item = entries.findEntry(name, 'file')
         if item:
@@ -256,10 +276,12 @@ class Disk:
 
     # pwd Command
     def cmd_pwd(self):
-        print(f"\\{'\\'.join(self.uDir)}")
+        print(f"/{'/'.join(self.uDir)}")
 
     # stat Command
     def cmd_stat(self, name):
+        path = self.get_path(name)
+        name = path[-1]
         entries = entry_list(d, self.cBlock)
         item = entries.findEntry(name)
         if item:
@@ -288,6 +310,8 @@ class Disk:
     # TODO: Add write if file already exists % check if file
     # TODO: Add new data structure to indirects
     def cmd_write(self, name, data):
+        path = self.get_path(name)
+        name = path[-1]
         # Find first unused inode
         inodeLoc = self.write_file_data_block(data)
         # Add record to current directory
@@ -296,6 +320,8 @@ class Disk:
     # touch Command
     # TODO: Add support for multi-block directories
     def cmd_touch(self, name):
+        path = self.get_path(name)
+        name = path[-1]
         # Find first unused block
         blockLoc = get_first_block(self)
         # Find first unused inode
@@ -315,6 +341,8 @@ class Disk:
 
     # mkdir Command
     def cmd_mkdir(self, name):
+        path = self.get_path(name)
+        name = path[-1]
         # Check if directory already exists
         entries = entry_list(d, self.cBlock)
         item = entries.findEntry(name)
@@ -345,6 +373,8 @@ class Disk:
     # TODO: check for multiple links and remove inode if zero
     # TODO: Add support for multi-block directories
     def cmd_rmdir(self, name):
+        path = self.get_path(name)
+        name = path[-1]
         # Check if directory already exists
         entries = entry_list(d, self.cBlock)
         item = entries.findEntry(name, 'dir')
@@ -358,6 +388,8 @@ class Disk:
     # delete Command
     # TODO: Check for multiple links and remove if 0
     def cmd_delete(self, name):
+        path = self.get_path(name)
+        name = path[-1]
         entries = entry_list(d, self.cBlock)
         item = entries.findEntry(name, 'file')
         if item:
@@ -371,50 +403,59 @@ class Disk:
     
     
     def cmd_copy(self, file, newFile):
-        print("copy")
+        path = self.get_path(file)
+        file = path[-1]
+        entries = entry_list(d, self.cBlock)
+        item = entries.findEntry(file, 'file')
+        if item:
+            originalData = [i.decode("utf-8").rstrip('\x00') for i in block_list(d, item.inode)]
+            # Find first unused inode
+            inodeLoc = self.write_file_data_block(originalData)
+            
+            # Hierarchical path for new file
+            newPath = self.get_path(newFile)
+            newFile = newPath[-1]
+            if len(newPath) < 2:
+                self.cBlock = self.uBlock
+                self.cDirNum = self.uDirNum
+            # Add record to directory
+            self.add_entry(inodeLoc, self.cDirNum, newFile)
+        else:
+            print("File not found./")
 
 disk = Disk(d)
 
 while(True):
     try:
         print()
-        inp = input(f"D:\\{'\\'.join(disk.uDir)}>")
+        inp = input(f"D:{'/'.join(disk.uDir)}>")
         print()
         
         split = inp.split()
-        
+        lenSplit = len(split)
         # Hierarchical path code
-        if len(split) > 1:
+        if lenSplit > 1:
             
-            items = split[1].split('\\')
+            items = split[1].split('/')
             secondItem = split[1]
-            lenSplit = len(split)
             
-            if len(items) > 1:
-                item = disk.get_path(items)
-                if isinstance(item, str):
-                    secondItem = item
-                else:
-                    secondItem = item.name
-            else:
-                disk.cBlock = disk.uBlock
-                disk.cDirNum = disk.uDirNum
-                
-                
-            if split[0] == "cd" and lenSplit == 2:
-                disk.cmd_cd(secondItem)
-            elif split[0] == "read" and lenSplit == 2:
-                disk.cmd_read(secondItem)
-            elif split[0] == "stat" and lenSplit == 2:
-                disk.cmd_stat(secondItem)
-            elif split[0] == "touch" and lenSplit == 2:
-                disk.cmd_touch(secondItem)
-            elif split[0] == "mkdir" and lenSplit == 2:
-                disk.cmd_mkdir(secondItem)
-            elif split[0] == "delete" and lenSplit == 2:
-                disk.cmd_delete(secondItem)
-            elif split[0] == "write" and lenSplit > 2:
-                disk.cmd_write(secondItem, ''.join(split[2:]))
+            if lenSplit == 2:
+                match split[0]:
+                    case "cd":
+                        disk.cmd_cd(secondItem)
+                    case "read":
+                        disk.cmd_read(secondItem)
+                    case "stat":
+                        disk.cmd_stat(secondItem)
+                    case "touch":
+                        disk.cmd_touch(secondItem)
+                    case "mkdir":
+                        disk.cmd_mkdir(secondItem)
+                    case "delete":
+                        disk.cmd_delete(secondItem)
+                    case "write":
+                        if lenSplit > 2:
+                            disk.cmd_write(secondItem, ''.join(split[2:]))
             
         else:
             if inp == "dir":

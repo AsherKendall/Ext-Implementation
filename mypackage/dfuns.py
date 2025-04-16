@@ -59,6 +59,14 @@ class Inode:
 
 
 def write_inode(d, loc, inode, BLOCK_SIZE):
+    """Writes byte data to a Inode
+
+    Args:
+        d (disk): disk object
+        loc (integer): location of the inode
+        inode (byte string): byte string to write to inode
+        BLOCK_SIZE (integer): Size of the blocks
+    """
     inodeBlockLoc = (loc // 32) + 2
     temp = d.readBlock(inodeBlockLoc)
     inodeBlocks = []
@@ -98,6 +106,8 @@ def get_first_block(disk):
 
 
 
+
+#TODO: Add support for extents
 def block_list(d, inode):
     blocks = []
     inodes = [inode]
