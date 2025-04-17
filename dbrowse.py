@@ -41,6 +41,8 @@ class Disk:
         self.cDirNum = self.uDirNum
         self.cBlock = self.uBlock
         
+        
+    # Dark Magic Function
     def get_path(self, path):
         splitPath = path.split('/')
         lenUDir = len(self.uDir)
@@ -56,8 +58,6 @@ class Disk:
         else:
             items = splitPath
             items = self.uDir + items #[[1,2]0,1,2]
-        
-        print(items)
         # Remove '' from / at end of argument
         if items[-1] == '':
             items.pop()
@@ -65,10 +65,6 @@ class Disk:
         itemLen = len(items)
         i = lenUDir
         while i < itemLen and len(items) > 0:
-            print(i)
-            print(items)
-            print(itemLen)
-            print()
             #print(self.cDirNum)
             entries = entry_list(d, self.cBlock)
             item = entries.findEntry(items[i])
@@ -100,7 +96,6 @@ class Disk:
                 print(f'Path not valid: {'/'.join(items)}')
                 return False
             i += 1
-        print(items)
         return items + [final]
         
     def write_inode_bitmap(self, loc):
