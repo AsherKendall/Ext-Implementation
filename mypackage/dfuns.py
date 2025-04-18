@@ -107,12 +107,11 @@ def get_first_block(disk):
 
 
 
-#TODO: Add support for extents
 def block_list(d, inode):
     blocks = []
     for item in inode.directs:
         if item != 0:
-            blocks.append(read_data_block(d,item))
+            blocks.append(item)
     if inode.indirects != 0:
         indirectBlock = read_data_block(d, inode.indirects)
         for i in range(0,512,2):
@@ -120,6 +119,16 @@ def block_list(d, inode):
             if loc == 0:
                 break
             else:
-                blocks.append(read_data_block(d, loc))
+                blocks.append(loc)
             
     return blocks
+
+
+#TODO: Add support for extents
+def read_blocks(d, inode):
+    blockLocs = block_list(d, inode)
+    blocks = []
+    for i in range(len(blockLocs)):
+        blocks.append(read_data_block(d, blockLocs[i]))
+    return blocks
+

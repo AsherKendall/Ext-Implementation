@@ -1,6 +1,6 @@
 import Disk
 import math
-from mypackage.dfuns  import splitToList, entry_list, Inode, Entry, read_data_block, write_data_block, get_first_inode, get_first_block, Entries, block_list, get_Inode, write_inode
+from mypackage.dfuns  import splitToList, entry_list, Inode, Entry, read_data_block, write_data_block, get_first_inode, get_first_block, Entries, read_blocks, get_Inode, write_inode, block_list
 DISK_FILE	= "disk.img"
 BLOCK_SIZE	= 512
 
@@ -55,7 +55,7 @@ class Disk:
             # Check if just root
             if len(splitPath) > 1 and splitPath[1] == '':
                 return []
-            print(splitPath)
+            #print(splitPath)
             splitPath.pop(0)
             items = splitPath
             self.cDirNum = 0
@@ -70,11 +70,10 @@ class Disk:
         final = items.pop()
         itemLen = len(items)
         i = lenUDir
-        print(lenUDir)
-        print(items)
+        #print(lenUDir)
+        #print(items)
         while i < itemLen and len(items) > 0:
             #print(self.cDirNum)
-            print("hit")
             entries = entry_list(d, self.cBlock)
             item = entries.findEntry(items[i])
             print(items)
@@ -106,7 +105,7 @@ class Disk:
                 print(f'Path not valid: {'/'.join(items)}')
                 return False
             i += 1
-        print(items + [final])
+        #print(items + [final])
         return items + [final]
         
     def write_inode_bitmap(self, loc):
@@ -188,7 +187,7 @@ class Disk:
         # Write modified inode
         self.write_inode_bitmap(inodeLoc)
         
-    def write_file_data_block(self, data):
+    def write_file_data_block(self, inodeLoc, data):
         
         dataBlocks = splitToList(data.encode('utf-8'),512)
         # Make sure last data block is 512 bytes
@@ -198,7 +197,6 @@ class Disk:
         
         
         availableBlocks = [i for i, letter in enumerate(self.block_bitmap) if letter == '0']
-        print(availableBlocks)
         # List of data block locations to be used
         usedDataBlock = []
         for i in range(len(dataBlocks)):
@@ -226,7 +224,6 @@ class Disk:
         indirBlock = indirBlock.ljust(512, b'\x00')
         
         # Get inode 
-        inodeLoc = get_first_inode(self)
         idataLoc = get_first_block(self)
         
         if madeIndirect:
@@ -240,11 +237,19 @@ class Disk:
         inodeBytes.ljust(16, b'\x00')
         # Write newInode to block
         self.add_inode(inodeLoc, inodeBytes)
-        return inodeLoc
 
     def add_entry(self, inodeLoc, blockLoc, name):
         dirBlock = read_data_block(d, blockLoc)
+        
+        entries = entry_list(d, dirBlock)
+        exist = entries.findEntry(name)
+        if exist:
+            print("File by that name already exists")
+            return False
+        
+        
         dBlock = [dirBlock[i:i+32] for i in range(0, len(dirBlock), 32)]
+        
         changed = False
         for i in range(len(dBlock)):
             if dBlock[i][:2] == b'\xFF\xFF':
@@ -258,8 +263,10 @@ class Disk:
             self.cBlock = read_data_block(d, self.cDirNum)
             if self.cDirNum == self.uDirNum:
                 self.uBlock = read_data_block(d, self.uDirNum)
+            return True
         else:
             print("No space in dir for new entries")
+            return False
     
     def remove_entry(self, name):
         entries = entry_list(d, self.uBlock)
@@ -326,7 +333,7 @@ class Disk:
         if item:
             if not self.inode_bitmap[item.location]:
                 return "Inode was not in bitmap"
-            blocks = block_list(d, item.inode)
+            blocks = read_blocks(d, item.inode)
             output = [i.decode("utf-8").rstrip('\x00') for i in blocks]
             print(''.join(output) )
             return
@@ -373,9 +380,14 @@ class Disk:
         path = self.get_path(name)
         name = path[-1]
         # Find first unused inode
-        inodeLoc = self.write_file_data_block(data)
+        inodeLoc = get_first_inode(self)
+        
         # Add record to current directory
-        self.add_entry(inodeLoc, self.cDirNum, name)
+        exist = self.add_entry(inodeLoc, self.cDirNum, name)
+        
+        # If entry don't already exist write the data
+        if not exist:
+            self.write_file_data_block(data)
 
     # touch Command
     # TODO: Add support for multi-block directories
@@ -387,18 +399,20 @@ class Disk:
         blockLoc = get_first_block(self)
         # Find first unused inode
         inodeLoc = get_first_inode(self)
-        # Zero out block
-        write_data_block(d, blockLoc, (b'\x00' * BLOCK_SIZE))
         # New Inode Bytes
         newInode = b'\x22\x22' + b'\x01\x00' + (b'\00'* 4) + blockLoc.to_bytes(2, byteorder='little') + (b'\x00' * 3)
-        # Write newInode to block
-        self.add_inode(inodeLoc, newInode)
         
         # Add record to current directory
-        self.add_entry(inodeLoc, self.cDirNum, name)
+        exist = self.add_entry(inodeLoc, self.cDirNum, name)
         
-        # Change bitmap
-        self.write_data_bitmap(blockLoc)
+        # Entry by name doesn't exist, write data, 
+        if not exist:
+            # Zero out block
+            write_data_block(d, blockLoc, (b'\x00' * BLOCK_SIZE))
+            # Write newInode to block
+            self.add_inode(inodeLoc, newInode)
+            # Change bitmap
+            self.write_data_bitmap(blockLoc)
 
     # mkdir Command
     def cmd_mkdir(self, name):
@@ -413,21 +427,25 @@ class Disk:
 
         # Get new BLock
         idataLoc = get_first_block(self)
-        write_data_block(d, idataLoc, (b'\xFF\xFF' + b'\x00' * 30) * 16)
-        self.write_data_bitmap(idataLoc)
         
         # Get new inode
         inodeLoc = get_first_inode(self)
         newInode = b'\x11\x11' + b'\x01\x00' + (b'\00'* 4) + idataLoc.to_bytes(2, byteorder='little') + (b'\x00' * 3)
-        self.add_inode(inodeLoc, newInode)
-        self.write_inode_bitmap(inodeLoc)
         
         # Create . dir
         self.add_entry(inodeLoc, idataLoc, '.')
         # Create .. dir
         self.add_entry(self.cInode, idataLoc, '..')
         
-        self.add_entry(inodeLoc, self.cDirNum, name)
+        exist = self.add_entry(inodeLoc, self.cDirNum, name)
+
+        # If entry doesn't already exists write inode and data block
+        if not exist:
+            self.add_inode(inodeLoc, newInode)
+            self.write_inode_bitmap(inodeLoc)
+            
+            write_data_block(d, idataLoc, (b'\xFF\xFF' + b'\x00' * 30) * 16)
+            self.write_data_bitmap(idataLoc)
         
         
     # rmdir Command
@@ -460,7 +478,6 @@ class Disk:
 
     # link Command
     def cmd_link(self, file, link):
-        print("hit")
         path = self.get_path(file)
         file = path[-1]
         entries = entry_list(d, self.cBlock)
@@ -469,8 +486,14 @@ class Disk:
             # Set back to current directory
             self.update_uDirBlock()
             newPath = self.get_path(link)
+            if len(newPath) < 1:
+                print("not a valid file path/name")
+                return
             newLink = newPath[-1]
-            self.add_entry(item.location, self.cDirNum, newLink)
+            
+            exist = self.add_entry(item.location, self.cDirNum, newLink)
+            if exist:
+                return
             
             # Add to link
             inode = item.inode
@@ -490,18 +513,19 @@ class Disk:
         entries = entry_list(d, self.cBlock)
         item = entries.findEntry(file, 'file')
         if item:
-            originalData = [i.decode("utf-8").rstrip('\x00') for i in block_list(d, item.inode)]
-            # Find first unused inode
-            inodeLoc = self.write_file_data_block(originalData)
+            originalData = ''.join([i.decode("utf-8").rstrip('\x00') for i in read_blocks(d, item.inode)])
             
+            # Find first unused inode
+            inodeLoc = get_first_inode(self)
+            
+            self.update_uDirBlock()
             # Hierarchical path for new file
             newPath = self.get_path(newFile)
             newFile = newPath[-1]
-            if len(newPath) < 2:
-                self.cBlock = self.uBlock
-                self.cDirNum = self.uDirNum
             # Add record to directory
-            self.add_entry(inodeLoc, self.cDirNum, newFile)
+            exist = self.add_entry(inodeLoc, self.cDirNum, newFile)
+            if not exist:
+                self.write_file_data_block(inodeLoc, originalData)
         else:
             print("File not found./")
 
