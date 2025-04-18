@@ -176,12 +176,11 @@ class Disk:
         # Get all data blocks and remove them from data bitmap
         blocks = block_list(d, inode)
         for i in range(len(blocks)):
+            write_data_block(d,blocks[i],b'\x00'* BLOCK_SIZE)
             self.write_data_bitmap(blocks[i])
         
-        # Remove from inode bitmap
-        self.write_inode_bitmap(inodeLoc)
         
-        # Zero out entry
+        # Zero out inode
         write_inode(d, inodeLoc, b'\x00' * 16, BLOCK_SIZE)
         
         # Write modified inode
@@ -191,7 +190,7 @@ class Disk:
         
         dataBlocks = splitToList(data.encode('utf-8'),512)
         # Make sure last data block is 512 bytes
-        dataBlocks[-1].ljust(512, b'\x00')
+        dataBlocks[-1] = dataBlocks[-1].ljust(512, b'\x00')
         
         dataSize = len(data)
         
@@ -205,7 +204,6 @@ class Disk:
             # Write to data block
             write_data_block(d, newBlock, dataBlocks[i])
             self.write_data_bitmap(newBlock)
-        
         
         inodeBytes = b'\x22\x22' + b'\x01\x00' + dataSize.to_bytes(4, byteorder="little")
         madeIndirect = False
@@ -242,10 +240,10 @@ class Disk:
         dirBlock = read_data_block(d, blockLoc)
         
         entries = entry_list(d, dirBlock)
-        exist = entries.findEntry(name)
-        if exist:
+        item = entries.findEntry(name)
+        if item:
             print("File by that name already exists")
-            return False
+            return True
         
         
         dBlock = [dirBlock[i:i+32] for i in range(0, len(dirBlock), 32)]
@@ -263,10 +261,10 @@ class Disk:
             self.cBlock = read_data_block(d, self.cDirNum)
             if self.cDirNum == self.uDirNum:
                 self.uBlock = read_data_block(d, self.uDirNum)
-            return True
+            return False
         else:
             print("No space in dir for new entries")
-            return False
+            return True
     
     def remove_entry(self, name):
         entries = entry_list(d, self.uBlock)
@@ -274,14 +272,22 @@ class Disk:
         if item:
             if item.type == 'file':
                 # Remove entry
-                dirBlock = read_data_block(d, self.cDirNum)
-                dBlock = [dirBlock[i:i+32] for i in range(0, len(dirBlock), 32)]
-                dBlock[item.location + 1] = b'\xFF\xFF'.ljust(32, b'\x00')
                 self.remove_inode(item.location)
-                write_data_block(d, self.cDirNum, b''.join(dBlock))
                 self.cBlock = read_data_block(d, self.cDirNum)
             else:
                 #TODO: Add support for removing sub entries
+                if item.inode.link > 1:
+                    self.remove_inode(item.location)
+                else:
+                    subItems = [item]
+                    self.remove_inode(item.location)
+                    while len(subItems) > 1:
+                        item = subItems.pop()
+                        # Add subDirectories to subitems
+                        if item.name != ".." or item.name != ".":
+                            if item.type == 'dir' and item.inode.links < 2:
+                                subItems = subItems + ([item for item in entry_list(d,read_data_block(item.inode.directs[0]))])
+                            self.remove_inode(item.location)
                 print("Remove sub entries")
     # dir Command
     def cmd_dir(self):
@@ -382,12 +388,15 @@ class Disk:
         # Find first unused inode
         inodeLoc = get_first_inode(self)
         
-        # Add record to current directory
-        exist = self.add_entry(inodeLoc, self.cDirNum, name)
-        
+        print(data)
         # If entry don't already exist write the data
-        if not exist:
-            self.write_file_data_block(data)
+        entries = entry_list(d, self.cBlock)
+        item = entries.findEntry(name, 'file')
+        if not item:
+            exist = self.add_entry(inodeLoc, self.cDirNum, name)
+            self.write_file_data_block(inodeLoc, data)
+        else:
+            print("do stuff here")
 
     # touch Command
     # TODO: Add support for multi-block directories
@@ -427,6 +436,7 @@ class Disk:
 
         # Get new BLock
         idataLoc = get_first_block(self)
+        write_data_block(d, idataLoc, (b'\xFF\xFF' + b'\x00' * 30) * 16)
         
         # Get new inode
         inodeLoc = get_first_inode(self)
@@ -437,16 +447,12 @@ class Disk:
         # Create .. dir
         self.add_entry(self.cInode, idataLoc, '..')
         
-        exist = self.add_entry(inodeLoc, self.cDirNum, name)
-
-        # If entry doesn't already exists write inode and data block
-        if not exist:
-            self.add_inode(inodeLoc, newInode)
-            self.write_inode_bitmap(inodeLoc)
-            
-            write_data_block(d, idataLoc, (b'\xFF\xFF' + b'\x00' * 30) * 16)
-            self.write_data_bitmap(idataLoc)
+        self.add_inode(inodeLoc, newInode)
+        self.add_entry(inodeLoc, self.cDirNum, name)
+        self.write_inode_bitmap(inodeLoc)
         
+        self.write_data_bitmap(idataLoc)
+    
         
     # rmdir Command
     # TODO: check for multiple links and remove inode if zero
@@ -454,15 +460,19 @@ class Disk:
     def cmd_rmdir(self, name):
         path = self.get_path(name)
         name = path[-1]
+        
+        if name == ".." or name == ".":
+            print(f"Cannot delete directory {name}")
         # Check if directory already exists
         entries = entry_list(d, self.cBlock)
         item = entries.findEntry(name, 'dir')
         if item:
+            # Remove from directory
+            self.remove_entry(name)
+        else:
             print(f"Directory {name} does not exist")
-        # Remove from directory
-        
-        # Check if multiple links else remove from bitmap and clear inode & data block
-        print("rmdir")
+            return
+        self.update_uDirBlock()
 
     # delete Command
     # TODO: Check for multiple links and remove if 0
@@ -474,7 +484,7 @@ class Disk:
         if item:
             self.remove_entry(name)
         else:
-            print("Can't find file by that name.")
+            print(f"File {name} does not exist")
 
     # link Command
     def cmd_link(self, file, link):
@@ -576,14 +586,15 @@ while(True):
                             disk.cmd_link(secondItem, split[2])
             
         else:
-            if inp == "dir":
-                disk.cmd_dir()
-            elif inp == "pwd":
-                disk.cmd_pwd()
-            elif inp == "help":
-                disk.cmd_help()
-            else:
-                print("Command not found")
+            match inp:
+                case "dir" | "ls":
+                    disk.cmd_dir()
+                case"pwd":
+                    disk.cmd_pwd()
+                case "help":
+                    disk.cmd_help()
+                case _:
+                    print("Command not found")
         disk.update_uDirBlock()
     except KeyboardInterrupt:
         print()

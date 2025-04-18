@@ -20,8 +20,10 @@ journaling
 
 # TODO
 
-Finish all commands
+Fix write command (putting random characters at end for some reason)
 
-Add support for hierarchical paths
+Finish rmdir & write command
+
+Add script to create disk from scratch
 
 Add custom data structure/changes
