@@ -47,8 +47,14 @@ class Disk:
         splitPath = path.split('/')
         lenUDir = len(self.uDir)
         
-        # Check if going from root
+        
+        
+        # Check if starting from root
         if splitPath[0] == '':
+            
+            # Check if just root
+            if len(splitPath) > 1 and splitPath[1] == '':
+                return []
             print(splitPath)
             splitPath.pop(0)
             items = splitPath
@@ -57,17 +63,21 @@ class Disk:
             lenUDir = 0
         else:
             items = splitPath
-            items = self.uDir + items #[[1,2]0,1,2]
+            items = self.uDir + items
         # Remove '' from / at end of argument
         if items[-1] == '':
             items.pop()
         final = items.pop()
         itemLen = len(items)
         i = lenUDir
+        print(lenUDir)
+        print(items)
         while i < itemLen and len(items) > 0:
             #print(self.cDirNum)
+            print("hit")
             entries = entry_list(d, self.cBlock)
             item = entries.findEntry(items[i])
+            print(items)
             if item and item.type == 'dir':
                 if item.name == '.':
                     items.pop(i)
@@ -96,6 +106,7 @@ class Disk:
                 print(f'Path not valid: {'/'.join(items)}')
                 return False
             i += 1
+        print(items + [final])
         return items + [final]
         
     def write_inode_bitmap(self, loc):
@@ -163,14 +174,19 @@ class Disk:
             write_inode(d, inodeLoc, inode.to_bytes(), BLOCK_SIZE)
             return
         
+        # Get all data blocks and remove them from data bitmap
+        blocks = block_list(d, inode)
+        for i in range(len(blocks)):
+            self.write_data_bitmap(blocks[i])
+        
+        # Remove from inode bitmap
+        self.write_inode_bitmap(inodeLoc)
+        
         # Zero out entry
         write_inode(d, inodeLoc, b'\x00' * 16, BLOCK_SIZE)
         
         # Write modified inode
         self.write_inode_bitmap(inodeLoc)
-        
-        # Deallocate data block bitmap
-        # TODO: Add support for extents
         
     def write_file_data_block(self, data):
         
@@ -240,6 +256,8 @@ class Disk:
         if changed:
             write_data_block(d, blockLoc, b''.join(dBlock))
             self.cBlock = read_data_block(d, self.cDirNum)
+            if self.cDirNum == self.uDirNum:
+                self.uBlock = read_data_block(d, self.uDirNum)
         else:
             print("No space in dir for new entries")
     
@@ -273,6 +291,14 @@ class Disk:
     # cd Command
     def cmd_cd(self, name):
         path = self.get_path(name)
+        if len(path) < 1:
+            self.uDir = path
+            self.cDirNum = 0
+            self.cBlock = read_data_block(d, 0)
+            self.cInode = 0
+            self.uDirNum = 0
+            self.uBlock = read_data_block(d, 0)
+            return
         name = path[-1]
         entries = entry_list(d, self.cBlock)
         item = entries.findEntry(name,'dir')
@@ -280,7 +306,7 @@ class Disk:
             self.uDir = path
             if name == '..' or name == '.':
                 self.uDir.pop()
-            if name == '..' and len(self.uDir) > 1:
+            if name == '..' and len(self.uDir) > 0:
                 self.uDir.pop()
             self.cDirNum = item.inode.directs[0]
             self.cBlock = read_data_block(d, self.cDirNum)
@@ -353,6 +379,7 @@ class Disk:
 
     # touch Command
     # TODO: Add support for multi-block directories
+    # TODO: check if file by name already exists
     def cmd_touch(self, name):
         path = self.get_path(name)
         name = path[-1]
@@ -432,8 +459,29 @@ class Disk:
             print("Can't find file by that name.")
 
     # link Command
-    def cmd_link(self):
-        print("link")
+    def cmd_link(self, file, link):
+        print("hit")
+        path = self.get_path(file)
+        file = path[-1]
+        entries = entry_list(d, self.cBlock)
+        item = entries.findEntry(file)
+        if item:
+            # Set back to current directory
+            self.update_uDirBlock()
+            newPath = self.get_path(link)
+            newLink = newPath[-1]
+            self.add_entry(item.location, self.cDirNum, newLink)
+            
+            # Add to link
+            inode = item.inode
+            inode.link += 1
+            inodeBytes = inode.to_bytes()
+            
+            # Change inode
+            write_inode(d,item.location, inodeBytes, BLOCK_SIZE)
+            
+        else:
+            print("Entry to be linked not found.")
     
     
     def cmd_copy(self, file, newFile):
@@ -473,23 +521,35 @@ while(True):
             items = split[1].split('/')
             secondItem = split[1]
             
-            if lenSplit == 2:
+            if lenSplit > 1:
                 match split[0]:
                     case "cd":
-                        disk.cmd_cd(secondItem)
+                        if lenSplit == 2:
+                            disk.cmd_cd(secondItem)
                     case "read":
-                        disk.cmd_read(secondItem)
+                        if lenSplit == 2:
+                            disk.cmd_read(secondItem)
                     case "stat":
-                        disk.cmd_stat(secondItem)
+                        if lenSplit == 2:
+                            disk.cmd_stat(secondItem)
                     case "touch":
-                        disk.cmd_touch(secondItem)
+                        if lenSplit == 2:
+                            disk.cmd_touch(secondItem)
                     case "mkdir":
-                        disk.cmd_mkdir(secondItem)
+                        if lenSplit == 2:
+                            disk.cmd_mkdir(secondItem)
                     case "delete":
-                        disk.cmd_delete(secondItem)
+                        if lenSplit == 2:
+                            disk.cmd_delete(secondItem)
                     case "write":
                         if lenSplit > 2:
                             disk.cmd_write(secondItem, ''.join(split[2:]))
+                    case "copy":
+                        if lenSplit > 2:
+                            disk.cmd_copy(secondItem, split[2])
+                    case "link":
+                        if lenSplit > 2:
+                            disk.cmd_link(secondItem, split[2])
             
         else:
             if inp == "dir":

@@ -52,8 +52,8 @@ class Inode:
     def to_bytes(self):
         byte = b''
         byte = byte + b'\x11\x11' if self.type == 'dir' else b'\x22\x22'
-        byte = byte + self.link.to_bytes(2, byteorder='little') + self.size.to_bytes(2, byteorder='little') 
-        byte = byte + b''.join([self.directs[i].to_bytes for  i in range(len(self.directs))])
+        byte = byte + self.link.to_bytes(2, byteorder='little') + self.size.to_bytes(4, byteorder='little') 
+        byte = byte + b''.join([self.directs[i].to_bytes(2, byteorder="little") for  i in range(len(self.directs))])
         byte = byte + self.indirects.to_bytes(2, byteorder='little') 
         return byte
 
@@ -110,26 +110,16 @@ def get_first_block(disk):
 #TODO: Add support for extents
 def block_list(d, inode):
     blocks = []
-    inodes = [inode]
-    # Add all directs to list
-    print()
-    while True:
-        
-        if len(inodes) <= 0:
-            break
-        # Takes first Inode off the list
-        newNode = inodes.pop(0)
-        
-        for item in newNode.directs:
-            if item != 0:
-                blocks.append(read_data_block(d,item))
-        if newNode.indirects != 0:
-            indirectBlock = read_data_block(d, newNode.indirects)
-            for i in range(0,512,2):
-                loc = int.from_bytes(indirectBlock[i*2:(i*2)+2], byteorder='little' )
-                if loc == 0:
-                    break
-                else:
-                    blocks.append(read_data_block(d, loc))
+    for item in inode.directs:
+        if item != 0:
+            blocks.append(read_data_block(d,item))
+    if inode.indirects != 0:
+        indirectBlock = read_data_block(d, inode.indirects)
+        for i in range(0,512,2):
+            loc = int.from_bytes(indirectBlock[i*2:(i*2)+2], byteorder='little' )
+            if loc == 0:
+                break
+            else:
+                blocks.append(read_data_block(d, loc))
             
     return blocks
