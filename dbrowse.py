@@ -279,7 +279,7 @@ class Disk:
                     
                     
                     while len(subItems) >= 1:
-                        # Remove all files and .., . from sublist
+                        # Remove all files, "..", and "." from sublist
                         newList = []
                         for i in range(len(subItems)):
                             if subItems[i].name != '.' and subItems[i].name != '..':
@@ -299,8 +299,7 @@ class Disk:
                             if item.name != ".." and item.name != ".":
                                 #print(f"Zeroing item : {item.name}, dirBlock: {currentDirBlock}")
                                 zero_entry(d, currentDirBlock, item.name)
-                                
-                                # Add sub items from directory if being deleted
+                                # Add sub items from directory if being deleted aka no links
                                 if item.inode.link < 2:
                                     #print(f"This file has no links {item.name}")
                                     subItems = subItems + ([item for item in entry_list(d,read_data_block(d, item.inode.directs[0])).entries])

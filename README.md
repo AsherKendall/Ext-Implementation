@@ -20,8 +20,6 @@ journaling
 
 # TODO
 
-Fix delete Command (delete sleepy.txt, mkdir Example)
-
 
 Add script to create disk from scratch
 
