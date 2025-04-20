@@ -22,7 +22,6 @@ journaling
 
 Fix delete Command (delete sleepy.txt, mkdir Example)
 
-Finish rmdir & write command
 
 Add script to create disk from scratch
 

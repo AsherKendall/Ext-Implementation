@@ -73,11 +73,7 @@ def write_inode(d, loc, inode, BLOCK_SIZE):
     for i in range(0, BLOCK_SIZE, 16):
         inodeBlocks.append(temp[i:i+16])
     # Set new inode data
-    for index, value in enumerate(inodeBlocks):
-        print(f"Index: {index}, Value: {value}")
     inodeBlocks[loc % 32] = inode
-    for index, value in enumerate(inodeBlocks):
-        print(f"Index: {index}, Value: {value}")
     inodeBlock = b''.join(inodeBlocks)
     
     # Write modified inode block to disk
@@ -98,21 +94,20 @@ def entry_list(d, block):
 def directory_bytes(block):
     entries = []
     for item in [block[i:i+32] for i in range(0, len(block), 32)]:
-        if item[:2] != b'\xFF\xFF':
-            entries.append(item)
+        entries.append(item)
     return entries
 
 def zero_entry(d, blockLoc, name):
     data = read_data_block(d, blockLoc)
-    entries = entry_list(d, data)
     dirBytes = directory_bytes(data)
-    item = entries.findEntry(name)
-    if item:
-        for i in range(len(dirBytes)):
-            iName = dirBytes[i][2:32].decode("utf-8").rstrip('\x00')
-            if iName == name:
-                dirBytes[i] = b'\xFF\xFF' + b'\x00' * 30
-                write_data_block(d, blockLoc, b''.join(dirBytes))
+    for i in range(len(dirBytes)):
+        iName = dirBytes[i][2:32].decode("utf-8").rstrip('\x00')
+        if iName == name:
+            dirBytes[i] = b'\xFF\xFF' + b'\x00' * 30
+            write_data_block(d, blockLoc, b''.join(dirBytes))
+            #print(f"Found entry by {name}")
+            return
+    #print(f"Couldn't Find entry by {name}")
 
 def write_data_block(d, loc, data):
     d.writeBlock(loc + 66, data)

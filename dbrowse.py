@@ -100,7 +100,6 @@ class Disk:
                 
                 self.cDirNum = item.inode.directs[0]
                 self.cBlock = read_data_block(d, self.cDirNum)
-                self.cInode = item.location
             else:
                 print(f'Path not valid: {'/'.join(items)}')
                 return False
@@ -163,10 +162,11 @@ class Disk:
             return
         
         # Get all data blocks and remove them from data bitmap
-        blocks = block_list(d, inode)
-        for i in range(len(blocks)):
-            write_data_block(d,blocks[i],b'\x00'* BLOCK_SIZE)
-            self.write_data_bitmap(blocks[i])
+        if inode.type == 'file':
+            blocks = block_list(d, inode)
+            for i in range(len(blocks)):
+                write_data_block(d,blocks[i],b'\x00'* BLOCK_SIZE)
+                self.write_data_bitmap(blocks[i])
         
         
         # Zero out inode
@@ -261,30 +261,51 @@ class Disk:
         if item:
             if item.type == 'file':
                 # Remove entry
-                zero_entry(d, self.cDirNum, item.name)
                 self.remove_inode(item.location)
+                zero_entry(d, self.cDirNum, item.name)
                 self.cBlock = read_data_block(d, self.cDirNum)
             else:
                 #TODO: Add support for removing sub entries
                 if item.inode.link > 1:
-                    self.remove_inode(item.location)
-                else:
-                    subItems = [item]
                     zero_entry(d, self.cDirNum, item.name)
                     self.remove_inode(item.location)
+                else:
+                    subItems = []
+                    zero_entry(d, self.cDirNum, item.name)
+                    if item.inode.link < 2:
+                        subItems = subItems + ([item for item in entry_list(d,read_data_block(d, item.inode.directs[0])).entries])
+                    currentDirBlock = item.inode.directs[0]
+                    self.remove_inode(item.location)
                     
-                    currentDirBlock = self.cDirNum
-                    while len(subItems) > 1:
-                        item = subItems.pop()
-                        # Add subDirectories to subitems
-                        if item.name != ".." or item.name != ".":
-                            # Add sub items from directory if being deleted
-                            if item.type == 'dir' and item.inode.link < 2:
-                                subItems = subItems + ([item for item in entry_list(d,read_data_block(item.inode.directs[0]))])
-                            self.remove_inode(item.location)
-                            zero_entry(d, currentDirBlock, item.name)
-                        currentDirBlock = item.inode.directs[0]
-                print("Remove sub entries")
+                    
+                    while len(subItems) >= 1:
+                        # Remove all files and .., . from sublist
+                        newList = []
+                        for i in range(len(subItems)):
+                            if subItems[i].name != '.' and subItems[i].name != '..':
+                                if subItems[i].inode.type == 'file':
+                                    self.remove_inode(subItems[i].location)
+                                    zero_entry(d, currentDirBlock, subItems[i].name)
+                                else:
+                                    newList.append(subItems[i])
+                            else:
+                                zero_entry(d, currentDirBlock, subItems[i].name)
+                        subItems = newList
+                        
+                        if len(subItems) > 0:
+                            item = subItems.pop()
+                            #print(f"Current item name : {item.name}")
+                            # Add subDirectories to subitems
+                            if item.name != ".." and item.name != ".":
+                                #print(f"Zeroing item : {item.name}, dirBlock: {currentDirBlock}")
+                                zero_entry(d, currentDirBlock, item.name)
+                                
+                                # Add sub items from directory if being deleted
+                                if item.inode.link < 2:
+                                    #print(f"This file has no links {item.name}")
+                                    subItems = subItems + ([item for item in entry_list(d,read_data_block(d, item.inode.directs[0])).entries])
+                                    currentDirBlock = item.inode.directs[0]
+                                self.remove_inode(item.location)
     # dir Command
     def cmd_dir(self):
         entries = entry_list(d, self.uBlock)
@@ -447,13 +468,9 @@ class Disk:
         
         self.add_inode(inodeLoc, newInode)
         self.add_entry(inodeLoc, self.cDirNum, name)
-        self.write_inode_bitmap(inodeLoc)
         
         self.write_data_bitmap(idataLoc)
-    
-        
     # rmdir Command
-    # TODO: check for multiple links and remove inode if zero
     # TODO: Add support for multi-block directories
     def cmd_rmdir(self, name):
         path = self.get_path(name)
@@ -461,6 +478,7 @@ class Disk:
         
         if name == ".." or name == ".":
             print(f"Cannot delete directory {name}")
+            return
         # Check if directory already exists
         entries = entry_list(d, self.cBlock)
         item = entries.findEntry(name, 'dir')
@@ -470,10 +488,8 @@ class Disk:
         else:
             print(f"Directory {name} does not exist")
             return
-        self.update_uDirBlock()
 
     # delete Command
-    # TODO: Check for multiple links and remove if 0
     def cmd_delete(self, name):
         path = self.get_path(name)
         name = path[-1]
@@ -573,6 +589,9 @@ while(True):
                     case "delete":
                         if lenSplit == 2:
                             disk.cmd_delete(secondItem)
+                    case "rmdir":
+                        if lenSplit == 2:
+                            disk.cmd_rmdir(secondItem)
                     case "write":
                         if lenSplit > 2:
                             disk.cmd_write(secondItem, ''.join(split[2:]))
