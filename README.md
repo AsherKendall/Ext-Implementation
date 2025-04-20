@@ -20,7 +20,7 @@ journaling
 
 # TODO
 
-Fix write command (putting random characters at end for some reason)
+Fix delete Command (delete sleepy.txt, mkdir Example)
 
 Finish rmdir & write command
 

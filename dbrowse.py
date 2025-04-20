@@ -1,6 +1,6 @@
 import Disk
 import math
-from mypackage.dfuns  import splitToList, entry_list, Inode, Entry, read_data_block, write_data_block, get_first_inode, get_first_block, Entries, read_blocks, get_Inode, write_inode, block_list
+from mypackage.dfuns  import splitToList, entry_list, Inode, Entry, read_data_block, write_data_block, get_first_inode, get_first_block, Entries, read_blocks, get_Inode, write_inode, block_list, zero_entry
 DISK_FILE	= "disk.img"
 BLOCK_SIZE	= 512
 
@@ -149,18 +149,7 @@ class Disk:
         
         
     def add_inode(self, inodeLoc, newInode):
-        inodeBlockLoc = (inodeLoc // 32) + 2
-        temp = d.readBlock(inodeBlockLoc)
-        inodeBlocks = []
-        for i in range(0, BLOCK_SIZE, 16):
-            inodeBlocks.append(temp[i:i+16])
-        # Set new inode data
-        inodeBlocks[inodeLoc % 32] = newInode
-        inodeBlock = b''.join(inodeBlocks)
-        
-        # Write modified inode block to disk
-        d.writeBlock(inodeBlockLoc, inodeBlock)
-        
+        write_inode(d, inodeLoc, newInode, BLOCK_SIZE)
         # Write modified inode
         self.write_inode_bitmap(inodeLoc)
     
@@ -272,6 +261,7 @@ class Disk:
         if item:
             if item.type == 'file':
                 # Remove entry
+                zero_entry(d, self.cDirNum, item.name)
                 self.remove_inode(item.location)
                 self.cBlock = read_data_block(d, self.cDirNum)
             else:
@@ -280,14 +270,20 @@ class Disk:
                     self.remove_inode(item.location)
                 else:
                     subItems = [item]
+                    zero_entry(d, self.cDirNum, item.name)
                     self.remove_inode(item.location)
+                    
+                    currentDirBlock = self.cDirNum
                     while len(subItems) > 1:
                         item = subItems.pop()
                         # Add subDirectories to subitems
                         if item.name != ".." or item.name != ".":
-                            if item.type == 'dir' and item.inode.links < 2:
+                            # Add sub items from directory if being deleted
+                            if item.type == 'dir' and item.inode.link < 2:
                                 subItems = subItems + ([item for item in entry_list(d,read_data_block(item.inode.directs[0]))])
                             self.remove_inode(item.location)
+                            zero_entry(d, currentDirBlock, item.name)
+                        currentDirBlock = item.inode.directs[0]
                 print("Remove sub entries")
     # dir Command
     def cmd_dir(self):
@@ -440,7 +436,9 @@ class Disk:
         
         # Get new inode
         inodeLoc = get_first_inode(self)
-        newInode = b'\x11\x11' + b'\x01\x00' + (b'\00'* 4) + idataLoc.to_bytes(2, byteorder='little') + (b'\x00' * 3)
+        newInode = (b'\x11\x11' + b'\x01\x00' + (b'\00'* 4) + idataLoc.to_bytes(2, byteorder='little')).ljust(16, b'\x00')
+        print(len(newInode))
+        print(newInode)
         
         # Create . dir
         self.add_entry(inodeLoc, idataLoc, '.')
