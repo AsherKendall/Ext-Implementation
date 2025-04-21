@@ -1,4 +1,7 @@
+from hashlib import sha256
 
+ENTRY_SIZE = 64
+BLOCK_SIZE	= 512
 
 def get_Inode(d, loc):
     
@@ -9,6 +12,27 @@ def get_Inode(d, loc):
     return Inode(block[blockLoc*16:(blockLoc*16)+16])
 
 
+def to_SHA256(data):
+    """Takes string and turns into MD5 hash
+
+    Args:
+        data (string): string to be hashed
+
+    Returns:
+        Bytes: MD5 hash as bytes
+    """
+    return sha256(data.encode('utf-8')).digest()
+
+def to_SHA256_String(data):
+    """Takes string and turns into MD5 hash string
+
+    Args:
+        data (string): string to be hashed
+
+    Returns:
+        string: MD5 hash as strings
+    """
+    return sha256(data.encode('utf-8')).hexdigest()
 
 class Entry:
     
@@ -16,27 +40,33 @@ class Entry:
         entryInodeLocation = int.from_bytes(entry[:2], byteorder='little' )
         entryInode = get_Inode(d,entryInodeLocation)
         
+        #print(entry[2:32])
         self.location = entryInodeLocation
         self.name = entry[2:32].decode("utf-8").rstrip('\x00')
         self.inode = entryInode
         self.size = entryInode.size
         self.type = entryInode.type
+        
+        self.hash = entry[32:ENTRY_SIZE].hex()
 
 
+#TODO: Add support for hashmap using MD5 entries
 class Entries:
     def __init__(self, entries):
-        self.entries = entries
-    
+        self.entries = {}
+        for entry in entries:
+            self.entries[entry.hash] = entry
     
     def findEntry(self, name, fileType="both"):
+        hash = to_SHA256_String(name)
         if fileType == "both":
-            for item in self.entries:
-                if item.name == name:
-                    return item
+            item = self.entries.get(hash, False)
+            if item and item.name == name:
+                return item
         else:
-            for item in self.entries:
-                if item.name == name and item.type == fileType:
-                    return item
+            item = self.entries.get(hash, False)
+            if item and item.name == name and item.type == fileType:
+                return item
         return False
 
 class Inode:
@@ -86,14 +116,14 @@ def splitToList(data, size):
 
 def entry_list(d, block):
     inodes = []
-    for item in [block[i:i+32] for i in range(0, len(block), 32)]:
+    for item in [block[i:i+ENTRY_SIZE] for i in range(0, len(block), ENTRY_SIZE)]:
         if item[:2] != b'\xFF\xFF':
             inodes.append(Entry(d, item))
     return Entries(inodes)
 
 def directory_bytes(block):
     entries = []
-    for item in [block[i:i+32] for i in range(0, len(block), 32)]:
+    for item in [block[i:i+ENTRY_SIZE] for i in range(0, len(block), ENTRY_SIZE)]:
         entries.append(item)
     return entries
 
@@ -101,9 +131,9 @@ def zero_entry(d, blockLoc, name):
     data = read_data_block(d, blockLoc)
     dirBytes = directory_bytes(data)
     for i in range(len(dirBytes)):
-        iName = dirBytes[i][2:32].decode("utf-8").rstrip('\x00')
+        iName = dirBytes[i][2:ENTRY_SIZE].decode("utf-8").rstrip('\x00')
         if iName == name:
-            dirBytes[i] = b'\xFF\xFF' + b'\x00' * 30
+            dirBytes[i] = b'\xFF\xFF' + b'\x00' * (ENTRY_SIZE-2)
             write_data_block(d, blockLoc, b''.join(dirBytes))
             #print(f"Found entry by {name}")
             return
@@ -131,7 +161,7 @@ def block_list(d, inode):
             blocks.append(item)
     if inode.indirects != 0:
         indirectBlock = read_data_block(d, inode.indirects)
-        for i in range(0,512,2):
+        for i in range(0,BLOCK_SIZE,2):
             loc = int.from_bytes(indirectBlock[i*2:(i*2)+2], byteorder='little' )
             if loc == 0:
                 break

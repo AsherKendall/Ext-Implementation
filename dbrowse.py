@@ -1,8 +1,7 @@
 import Disk
 import math
-from mypackage.dfuns  import splitToList, entry_list, Inode, Entry, read_data_block, write_data_block, get_first_inode, get_first_block, Entries, read_blocks, get_Inode, write_inode, block_list, zero_entry
+from mypackage.dfuns  import splitToList, entry_list, Inode, Entry, read_data_block, write_data_block, get_first_inode, get_first_block, Entries, read_blocks, get_Inode, write_inode, block_list, zero_entry, ENTRY_SIZE, BLOCK_SIZE, to_SHA256
 DISK_FILE	= "disk.img"
-BLOCK_SIZE	= 512
 
 # Disk FIle
 d = Disk.Disk(DISK_FILE, BLOCK_SIZE)
@@ -225,6 +224,7 @@ class Disk:
         # Write newInode to block
         self.add_inode(inodeLoc, inodeBytes)
 
+    #TODO: Add support for md5 hashing
     def add_entry(self, inodeLoc, blockLoc, name):
         dirBlock = read_data_block(d, blockLoc)
         
@@ -235,14 +235,14 @@ class Disk:
             return True
         
         
-        dBlock = [dirBlock[i:i+32] for i in range(0, len(dirBlock), 32)]
+        dBlock = [dirBlock[i:i+ENTRY_SIZE] for i in range(0, len(dirBlock), ENTRY_SIZE)]
         
         changed = False
         for i in range(len(dBlock)):
             if dBlock[i][:2] == b'\xFF\xFF':
                 # Change entry
                 changed = True
-                dBlock[i] = (inodeLoc.to_bytes(2, byteorder='little')+ name.encode("utf-8")).ljust(32, b'\x00')
+                dBlock[i] = (inodeLoc.to_bytes(2, byteorder='little')+ name.encode("utf-8")).ljust(32, b'\x00') + to_SHA256(name)
                 break
         # Write modified directory to disk
         if changed:
@@ -308,7 +308,7 @@ class Disk:
     # dir Command
     def cmd_dir(self):
         entries = entry_list(d, self.uBlock)
-        for item in entries.entries:
+        for item in entries.entries.values():
             # Directory
             if item.type == 'dir':
                 print(f' Directory  Size:{item.size:<5}  {item.name}')
@@ -452,7 +452,7 @@ class Disk:
 
         # Get new BLock
         idataLoc = get_first_block(self)
-        write_data_block(d, idataLoc, (b'\xFF\xFF' + b'\x00' * 30) * 16)
+        write_data_block(d, idataLoc, (b'\xFF\xFF' + b'\x00' * (ENTRY_SIZE-2)) * 8)
         
         # Get new inode
         inodeLoc = get_first_inode(self)

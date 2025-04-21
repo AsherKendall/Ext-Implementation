@@ -1,8 +1,8 @@
 import Disk
-from mypackage.dfuns  import write_data_block
+from mypackage.dfuns  import write_data_block, BLOCK_SIZE, ENTRY_SIZE
+from hashlib import sha256
 
 DISK_FILE	= "disk.img"
-BLOCK_SIZE	= 512
 
 
 
@@ -27,9 +27,11 @@ d.writeBlock(1, bitmapBytes)
 # Set inode
 
 inodeBlock = b'\x11\x11\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'.ljust(BLOCK_SIZE,b'\x00')
-d.writeBlock(2, bitmapBytes)
+d.writeBlock(2, inodeBlock)
 
 # Create root folder
 
-data = (b'\x00\x00' + b'\x2E' + b'\x00'* 29 + b'\x00\x00' + b'\x2E\x2E' + b'\x00'* 28) + (b'\xFF\xFF' + b'\x00' * 30) * 14
+sDot = b'\x00\x00' + b'\x2E' + b'\x00'* 29 + sha256('.'.encode('utf-8')).digest()
+dDot = b'\x00\x00' + b'\x2E\x2E' + b'\x00'* 28 + sha256('..'.encode('utf-8')).digest()
+data = sDot + dDot + (b'\xFF\xFF' + b'\x00' * (ENTRY_SIZE -2)) * 6
 d.writeBlock(66, data)

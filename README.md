@@ -21,6 +21,9 @@ journaling
 # TODO
 
 
-Add script to create disk from scratch
-
 Add custom data structure/changes
+
+Create writeup
+
+Create presentation
+
