@@ -121,6 +121,13 @@ def entry_list(d, block):
             inodes.append(Entry(d, item))
     return Entries(inodes)
 
+def entry_array(d, block):
+    inodes = []
+    for item in [block[i:i+ENTRY_SIZE] for i in range(0, len(block), ENTRY_SIZE)]:
+        if item[:2] != b'\xFF\xFF':
+            inodes.append(Entry(d, item))
+    return inodes
+
 def directory_bytes(block):
     entries = []
     for item in [block[i:i+ENTRY_SIZE] for i in range(0, len(block), ENTRY_SIZE)]:
@@ -131,7 +138,7 @@ def zero_entry(d, blockLoc, name):
     data = read_data_block(d, blockLoc)
     dirBytes = directory_bytes(data)
     for i in range(len(dirBytes)):
-        iName = dirBytes[i][2:ENTRY_SIZE].decode("utf-8").rstrip('\x00')
+        iName = dirBytes[i][2:32].decode("utf-8").rstrip('\x00')
         if iName == name:
             dirBytes[i] = b'\xFF\xFF' + b'\x00' * (ENTRY_SIZE-2)
             write_data_block(d, blockLoc, b''.join(dirBytes))
@@ -144,6 +151,9 @@ def write_data_block(d, loc, data):
 
 def read_data_block(d, loc):
     return d.readBlock(loc + 66)
+
+def read_extent(d, start, length):
+    return d.readBlocks(start + 66, length)
 
 def get_first_inode(disk):
     return int(disk.inode_bitmap.index('0'))
@@ -161,12 +171,13 @@ def block_list(d, inode):
             blocks.append(item)
     if inode.indirects != 0:
         indirectBlock = read_data_block(d, inode.indirects)
-        for i in range(0,BLOCK_SIZE,2):
-            loc = int.from_bytes(indirectBlock[i*2:(i*2)+2], byteorder='little' )
-            if loc == 0:
+        for i in range(0,BLOCK_SIZE,4):
+            start = int.from_bytes(indirectBlock[i*2:(i*2)+2], byteorder='little' )
+            length = int.from_bytes(indirectBlock[i*2+2:(i*2)+4], byteorder='little' )
+            if start == 0:
                 break
             else:
-                blocks.append(loc)
+                blocks.append((start, length))
             
     return blocks
 
@@ -175,7 +186,12 @@ def block_list(d, inode):
 def read_blocks(d, inode):
     blockLocs = block_list(d, inode)
     blocks = []
+    print(blockLocs)
     for i in range(len(blockLocs)):
-        blocks.append(read_data_block(d, blockLocs[i]))
+        if isinstance(blockLocs[i], tuple):
+            blocks.append(read_extent(d, blockLocs[i][0], blockLocs[i][1]))
+        else:
+            blocks.append(read_data_block(d, blockLocs[i]))
+
     return blocks
 

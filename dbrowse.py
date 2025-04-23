@@ -1,6 +1,6 @@
 import Disk
 import math
-from mypackage.dfuns  import splitToList, entry_list, Inode, Entry, read_data_block, write_data_block, get_first_inode, get_first_block, Entries, read_blocks, get_Inode, write_inode, block_list, zero_entry, ENTRY_SIZE, BLOCK_SIZE, to_SHA256
+from mypackage.dfuns  import splitToList, entry_list, Inode, Entry, read_data_block, write_data_block, get_first_inode, get_first_block, Entries, read_blocks, get_Inode, write_inode, block_list, zero_entry, ENTRY_SIZE, BLOCK_SIZE, to_SHA256, entry_array
 DISK_FILE	= "disk.img"
 
 # Disk FIle
@@ -145,12 +145,17 @@ class Disk:
         bitmaps = ''.join(format(byte, '08b') for byte in bitmap_block) # Turns into binary
         self.block_bitmap = bitmaps[len(bitmaps) // 2:]
         
+    def write_data_bitmap_list(self, loc, length):
+        for i in range (loc, loc + length+1):
+            self.write_data_bitmap(i)
         
     def add_inode(self, inodeLoc, newInode):
         write_inode(d, inodeLoc, newInode, BLOCK_SIZE)
         # Write modified inode
         self.write_inode_bitmap(inodeLoc)
     
+    
+    #TODO: Add extent Support
     def remove_inode(self, inodeLoc):
         
         # Check if has more than 1 link and minus count if true
@@ -163,9 +168,14 @@ class Disk:
         # Get all data blocks and remove them from data bitmap
         if inode.type == 'file':
             blocks = block_list(d, inode)
+            print(blocks)
             for i in range(len(blocks)):
-                write_data_block(d,blocks[i],b'\x00'* BLOCK_SIZE)
-                self.write_data_bitmap(blocks[i])
+                if isinstance(blocks[i], tuple):
+                    write_data_block(d,blocks[i][0],b'\x00'* BLOCK_SIZE * (blocks[i][1] + 1))
+                    self.write_data_bitmap_list(blocks[i][0],blocks[i][1])
+                else:
+                    write_data_block(d,blocks[i],b'\x00'* BLOCK_SIZE)
+                    self.write_data_bitmap(blocks[i])
         
         
         # Zero out inode
@@ -174,6 +184,7 @@ class Disk:
         # Write modified inode
         self.write_inode_bitmap(inodeLoc)
         
+    #TODO: Add extent Support
     def write_file_data_block(self, inodeLoc, data):
         
         dataBlocks = splitToList(data.encode('utf-8'),512)
@@ -196,6 +207,11 @@ class Disk:
         inodeBytes = b'\x22\x22' + b'\x01\x00' + dataSize.to_bytes(4, byteorder="little")
         madeIndirect = False
         indirBlock = b''
+        
+        start = 0
+        inExtent = False
+        writtenBlocks = 0
+        print(usedDataBlock)
         for i in range(len(usedDataBlock)):
             if i < 3:
                 # Add to direct block in inode
@@ -203,8 +219,21 @@ class Disk:
             else:
                 # Add to indirect data block file.
                 madeIndirect = True
-                indirBlock = indirBlock + usedDataBlock[i].to_bytes(2, byteorder='little')
-                print()
+                if usedDataBlock[i-1] + 1 == usedDataBlock[i]:
+                    if not inExtent:
+                        inExtent = True
+                        start = usedDataBlock[i]
+                        writtenBlocks = 0
+                    
+                    writtenBlocks += 1
+                else:
+                    inExtent = False
+                    print(f"start:{start} length:{writtenBlocks}")
+                    indirBlock = indirBlock + start.to_bytes(2, byteorder='little') + writtenBlocks.to_bytes(2, byteorder='little')
+                    start = 0
+        if inExtent:
+            print(f"start:{start} length:{writtenBlocks}")
+            indirBlock = indirBlock + start.to_bytes(2, byteorder='little') + writtenBlocks.to_bytes(2, byteorder='little')
         
         
         indirBlock = indirBlock.ljust(512, b'\x00')
@@ -224,7 +253,7 @@ class Disk:
         # Write newInode to block
         self.add_inode(inodeLoc, inodeBytes)
 
-    #TODO: Add support for md5 hashing
+    #TODO: Add support multi block directories
     def add_entry(self, inodeLoc, blockLoc, name):
         dirBlock = read_data_block(d, blockLoc)
         
@@ -273,7 +302,7 @@ class Disk:
                     subItems = []
                     zero_entry(d, self.cDirNum, item.name)
                     if item.inode.link < 2:
-                        subItems = subItems + ([item for item in entry_list(d,read_data_block(d, item.inode.directs[0])).entries])
+                        subItems = subItems + ([item for item in entry_array(d,read_data_block(d, item.inode.directs[0]))])
                     currentDirBlock = item.inode.directs[0]
                     self.remove_inode(item.location)
                     
@@ -302,7 +331,7 @@ class Disk:
                                 # Add sub items from directory if being deleted aka no links
                                 if item.inode.link < 2:
                                     #print(f"This file has no links {item.name}")
-                                    subItems = subItems + ([item for item in entry_list(d,read_data_block(d, item.inode.directs[0])).entries])
+                                    subItems = subItems + ([item for item in entry_array(d,read_data_block(d, item.inode.directs[0]))])
                                     currentDirBlock = item.inode.directs[0]
                                 self.remove_inode(item.location)
     # dir Command
@@ -529,7 +558,6 @@ class Disk:
         else:
             print("Entry to be linked not found.")
     
-    
     def cmd_copy(self, file, newFile):
         path = self.get_path(file)
         file = path[-1]
@@ -593,7 +621,7 @@ while(True):
                             disk.cmd_rmdir(secondItem)
                     case "write":
                         if lenSplit > 2:
-                            disk.cmd_write(secondItem, ''.join(split[2:]))
+                            disk.cmd_write(secondItem, ' '.join(split[2:]))
                     case "copy":
                         if lenSplit > 2:
                             disk.cmd_copy(secondItem, split[2])

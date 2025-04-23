@@ -40,6 +40,22 @@ class Disk:
 
 		return data
 
+	# Read a contiguous from the disk
+	#
+	# @param n	Block number to read
+	#
+ 	# @param l	Length of blocks to read
+	#
+	# @return	`blocksize` number of bytes, from the block
+	def readBlocks(self, n, l):
+
+		self.diskfile.seek(self.blocksize * n)
+		data = self.diskfile.read(self.blocksize * l)
+
+		self.blockreads += l
+
+		return data
+
 	# Write a block to the disk
 	#
 	# @param n		Block number to write to
