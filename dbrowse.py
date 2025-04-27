@@ -11,6 +11,7 @@ class Disk:
     
     def __init__(self, d):
         self.superBlock = d.readBlock(0)
+        self.diskName = self.superBlock.rstrip(b'\x00').decode('utf-8')
 
         bitmap_block = d.readBlock(1)
         bitmaps = ''.join(format(byte, '08b') for byte in bitmap_block) # Turns into binary
@@ -415,14 +416,19 @@ class Disk:
         
     # help Command
     def cmd_help(self):
-        print("dir          |  List contents of current directory. Print type, size (for files), and name")
-        print("cd <dir>     |  Change directory (“cd ..” should go to the parent directory)")
-        print("read <file>  |  Read and print the contents of a file")
-        print("pwd          |  Print the current working directory.")
-        print("help         |  Lists the commands available, how to use them and what they do.") 
-        print("stat         |  Print the inode information for this file.") 
-        print("write        |  Create a file with given name and data.") 
-        print("touch        |  Create a file with given name.") 
+        print("dir                   |  List contents of current directory. Print type, size (for files), and name.")
+        print("cd <dir>              |  Change directory (“cd ..” should go to the parent directory).")
+        print("read <file>           |  Read and print the contents of a file.")
+        print("pwd                   |  Print the current working directory.")
+        print("help                  |  Lists the commands available, how to use them and what they do.") 
+        print("stat                  |  Print the inode information for this file.") 
+        print("write <file> <text>   |  Create a file with given name and data.") 
+        print("touch <file>          |  Create a file with given name.")
+        print("mkdir <dir>           |  Removes a directory and all of its subfiles.")
+        print("rmdir <dir>           |  Removes a directory and all of its subfiles.")
+        print("copy <file> <newFile> |  Removes a directory and all of its subfiles.")
+        print("delete <file>         |  Deletes a file.")
+        print("link <item> <newItem> |  Creates a symlink to a file or directory.")
         
     # write Command
     # TODO: Add write if file already exists % check if file
@@ -581,6 +587,8 @@ class Disk:
             print("File not found./")
 
 disk = Disk(d)
+
+print(f"Browsing Disk: {disk.diskName}")
 
 while(True):
     try:

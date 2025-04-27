@@ -1,10 +1,18 @@
 import Disk
 from mypackage.dfuns  import write_data_block, BLOCK_SIZE, ENTRY_SIZE
 from hashlib import sha256
+import argparse
+import sys
 
 DISK_FILE	= "disk.img"
 
+if len(sys.argv) > 1:
+    arguments = sys.argv[1:]
+    print("Arguments passed:", arguments)
 
+parser = argparse.ArgumentParser(description="Script for initializing disk image")
+parser.add_argument("name", type=str, help="Your name")
+args = parser.parse_args()
 
 size_bytes = (1 + 1 + 64 + 2048) * BLOCK_SIZE
 with open('./disk.img', 'wb') as f:
@@ -14,7 +22,7 @@ print(f"Created disk image")
 
 #Create basic file structure
 d = Disk.Disk(DISK_FILE, BLOCK_SIZE)
-diskName = 'Example_Disk_Image'
+diskName = args.name
 # Set super block
 d.writeBlock(0, diskName.encode("utf-8").ljust(BLOCK_SIZE, b'\x00'))
 # Set bitmap
