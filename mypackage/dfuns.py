@@ -182,7 +182,6 @@ def block_list(d, inode):
     return blocks
 
 
-#TODO: Add support for extents
 def read_blocks(d, inode):
     blockLocs = block_list(d, inode)
     blocks = []

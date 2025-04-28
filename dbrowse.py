@@ -156,7 +156,6 @@ class Disk:
         self.write_inode_bitmap(inodeLoc)
     
     
-    #TODO: Add extent Support
     def remove_inode(self, inodeLoc):
         
         # Check if has more than 1 link and minus count if true
@@ -185,12 +184,11 @@ class Disk:
         # Write modified inode
         self.write_inode_bitmap(inodeLoc)
         
-    #TODO: Add extent Support
     def write_file_data_block(self, inodeLoc, data):
         
-        dataBlocks = splitToList(data.encode('utf-8'),512)
+        dataBlocks = splitToList(data.encode('utf-8'),BLOCK_SIZE)
         # Make sure last data block is 512 bytes
-        dataBlocks[-1] = dataBlocks[-1].ljust(512, b'\x00')
+        dataBlocks[-1] = dataBlocks[-1].ljust(BLOCK_SIZE, b'\x00')
         
         dataSize = len(data)
         
@@ -237,7 +235,7 @@ class Disk:
             indirBlock = indirBlock + start.to_bytes(2, byteorder='little') + writtenBlocks.to_bytes(2, byteorder='little')
         
         
-        indirBlock = indirBlock.ljust(512, b'\x00')
+        indirBlock = indirBlock.ljust(BLOCK_SIZE, b'\x00')
         
         # Get inode 
         idataLoc = get_first_block(self)
@@ -295,7 +293,6 @@ class Disk:
                 zero_entry(d, self.cDirNum, item.name)
                 self.cBlock = read_data_block(d, self.cDirNum)
             else:
-                #TODO: Add support for removing sub entries
                 if item.inode.link > 1:
                     zero_entry(d, self.cDirNum, item.name)
                     self.remove_inode(item.location)
@@ -336,6 +333,7 @@ class Disk:
                                     currentDirBlock = item.inode.directs[0]
                                 self.remove_inode(item.location)
     # dir Command
+    # TODO: Add argument support
     def cmd_dir(self):
         entries = entry_list(d, self.uBlock)
         for item in entries.entries.values():
@@ -416,7 +414,7 @@ class Disk:
         
     # help Command
     def cmd_help(self):
-        print("dir                   |  List contents of current directory. Print type, size (for files), and name.")
+        print("dir/ls                |  List contents of current directory. Print type, size (for files), and name.")
         print("cd <dir>              |  Change directory (“cd ..” should go to the parent directory).")
         print("read <file>           |  Read and print the contents of a file.")
         print("pwd                   |  Print the current working directory.")
@@ -428,7 +426,7 @@ class Disk:
         print("rmdir <dir>           |  Removes a directory and all of its subfiles.")
         print("copy <file> <newFile> |  Removes a directory and all of its subfiles.")
         print("delete <file>         |  Deletes a file.")
-        print("link <item> <newItem> |  Creates a symlink to a file or directory.")
+        print("link <item> <newItem> |  Creates a hard link to a file or directory.")
         
     # write Command
     # TODO: Add write if file already exists % check if file
