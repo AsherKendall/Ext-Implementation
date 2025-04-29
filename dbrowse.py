@@ -26,8 +26,6 @@ class Disk:
             # Inodes per Block
             for y in range(int(len(block)/16)):
                 self.inodes.append(Inode(block[y*16:(y*16)+16]))
-                
-                
         self.cDirNum = 0
         self.uDirNum = 0
         self.uDir = []
@@ -76,7 +74,7 @@ class Disk:
             #print(self.cDirNum)
             entries = entry_list(d, self.cBlock)
             item = entries.findEntry(items[i])
-            print(items)
+            #print(items)
             if item and item.type == 'dir':
                 if item.name == '.':
                     items.pop(i)
@@ -168,7 +166,7 @@ class Disk:
         # Get all data blocks and remove them from data bitmap
         if inode.type == 'file':
             blocks = block_list(d, inode)
-            print(blocks)
+            #print(blocks)
             for i in range(len(blocks)):
                 if isinstance(blocks[i], tuple):
                     write_data_block(d,blocks[i][0],b'\x00'* BLOCK_SIZE * (blocks[i][1] + 1))
@@ -210,7 +208,6 @@ class Disk:
         start = 0
         inExtent = False
         writtenBlocks = 0
-        print(usedDataBlock)
         for i in range(len(usedDataBlock)):
             if i < 3:
                 # Add to direct block in inode
@@ -227,11 +224,11 @@ class Disk:
                     writtenBlocks += 1
                 else:
                     inExtent = False
-                    print(f"start:{start} length:{writtenBlocks}")
+                    #print(f"start:{start} length:{writtenBlocks}")
                     indirBlock = indirBlock + start.to_bytes(2, byteorder='little') + writtenBlocks.to_bytes(2, byteorder='little')
                     start = 0
         if inExtent:
-            print(f"start:{start} length:{writtenBlocks}")
+            #print(f"start:{start} length:{writtenBlocks}")
             indirBlock = indirBlock + start.to_bytes(2, byteorder='little') + writtenBlocks.to_bytes(2, byteorder='little')
         
         
@@ -388,7 +385,7 @@ class Disk:
             print(''.join(output) )
             return
 
-        print(name)
+        #print(name)
         print("Sorry file by that name could not be found")
 
     # pwd Command
@@ -437,7 +434,6 @@ class Disk:
         # Find first unused inode
         inodeLoc = get_first_inode(self)
         
-        print(data)
         # If entry don't already exist write the data
         entries = entry_list(d, self.cBlock)
         item = entries.findEntry(name, 'file')
@@ -445,7 +441,7 @@ class Disk:
             exist = self.add_entry(inodeLoc, self.cDirNum, name)
             self.write_file_data_block(inodeLoc, data)
         else:
-            print("do stuff here")
+            print("file already exists")
 
     # touch Command
     # TODO: Add support for multi-block directories
@@ -490,8 +486,8 @@ class Disk:
         # Get new inode
         inodeLoc = get_first_inode(self)
         newInode = (b'\x11\x11' + b'\x01\x00' + (b'\00'* 4) + idataLoc.to_bytes(2, byteorder='little')).ljust(16, b'\x00')
-        print(len(newInode))
-        print(newInode)
+        #print(len(newInode))
+        #print(newInode)
         
         # Create . dir
         self.add_entry(inodeLoc, idataLoc, '.')

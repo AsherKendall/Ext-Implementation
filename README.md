@@ -3,25 +3,22 @@
 
 
 
-# Idea list
+# Run Project
 
-https://en.wikipedia.org/wiki/Ext4
-https://en.wikipedia.org/wiki/Btrfs
+## Initialize Disk
 
-Htree
+```python dbrowse.py "diskName"```
+## Run Program
 
-B+tree
+```python dbrowse.py```
 
-Extents
+## Get Commands
 
-journaling
-
-
+Run command
+```help```
 
 # TODO
 
-
-Add custom data structure/changes
 
 Create writeup
 

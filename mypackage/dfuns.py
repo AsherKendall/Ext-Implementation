@@ -144,7 +144,7 @@ def zero_entry(d, blockLoc, name):
             write_data_block(d, blockLoc, b''.join(dirBytes))
             #print(f"Found entry by {name}")
             return
-    #print(f"Couldn't Find entry by {name}")
+    print(f"Couldn't Find entry by {name}")
 
 def write_data_block(d, loc, data):
     d.writeBlock(loc + 66, data)
