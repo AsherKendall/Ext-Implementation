@@ -1,5 +1,5 @@
 import Disk
-from mypackage.dfuns  import write_data_block, BLOCK_SIZE, ENTRY_SIZE
+from extPack.dfuns  import write_data_block, BLOCK_SIZE, ENTRY_SIZE
 from hashlib import sha256
 import argparse
 import sys

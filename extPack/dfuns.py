@@ -185,7 +185,7 @@ def block_list(d, inode):
 def read_blocks(d, inode):
     blockLocs = block_list(d, inode)
     blocks = []
-    print(blockLocs)
+    #print(blockLocs)
     for i in range(len(blockLocs)):
         if isinstance(blockLocs[i], tuple):
             blocks.append(read_extent(d, blockLocs[i][0], blockLocs[i][1]))
